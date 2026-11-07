@@ -1,0 +1,1030 @@
+; ROM labels and directives for tools/disasm.py (CPU addresses $8000-$FFFF)
+; AAAA name [; comment]               label
+; code|data|words|rtswords AAAA-AAAA  force classification (rtswords: stored address = target-1)
+; table AAAA-AAAA N [header]          data table, N bytes per row; references into it become name+offset
+; text AAAA-AAAA                      ASCII string, emitted as .byte "..."
+; split LO HI N [adj] [prefix]        lo/hi address tables of N entries (adj 1 = RTS trick)
+; imm AAAA AAAA                       the immediates of these two instructions are #<target / #>target
+; note AAAA ; text                    comment line printed before the line at AAAA
+; bitskip AAAA                        BIT abs ($2C) skips a 2-byte instruction: AAAA = data, AAAA+1 = hidden code
+; module AAAA name [; description]    source file src/prg/name.asm starts at AAAA (the first one at $8000)
+; dbyt AAAA-AAAA                      16-bit numbers, big-endian: .dbyt $XXXX
+; numwords AAAA-AAAA                  16-bit numbers (not addresses), little-endian: .word $XXXX
+
+
+module 8000 tables ; jump/pointer tables and small data tables
+module 8258 main ; reset, NMI, game modes, PPU and joypad helpers
+module 9010 gfx_data ; PPU strings, object tables, metasprites
+module A47D player ; player input and actions, floor scrolling
+module A931 spawns ; floor events: boss arrival, enemy groups, floor 2 and floor 4 events
+module ACDA enemies ; object update loop, enemy and object handlers, walking helpers
+module B2B5 draw ; object sprites, fragments, effects, floor 4 sprites; distances to the player
+module BAA0 obj_tables ; wall page plaques, Sylvia; knife, hit box, damage, score and HUD tables
+module BDE1 knives ; knife thrower and its knives
+module C08A hits ; hit boxes and hit checks, damage and points; floor timer, HUD, score and bonuses
+module CDDF bosses ; boss tables and handlers, boomerangs, floor 4 boss tricks
+module DAE0 ppu_strings ; PPU string record writer (NMI)
+module DB3E samples ; palettes, DPCM samples $DC00-$F830
+module F831 sound ; sound engine, music data, vectors
+8000 GameModeHandlers ; jump table: gameMode, used while displayOn
+800E ModeScripts ; per gameMode: list of handlers run step by step (modeStep) while the display is off (RunGameMode)
+801C TitleScript ; ModeScripts of GM_TITLE
+8024 FloorStartScript ; ModeScripts of GM_FLOOR_START .. GM_GAME_OVER
+8044 SylviaScript
+804E EndingScript
+8056 PpuJobLo ; ppuJob -> address of PPU string records (lo), 79 jobs
+80A5 PpuJobHi
+80F4 TitleCursorY ; cursor sprite Y by gameSelect
+80F8 FloorEventHandlers ; per floor -> floorEvent: floors 2 and 4 start with their own handler, then switch to UpdateBossAndSpawns
+8102 Floor4FlyerX ; floor 4: start objWorldX of slots 7-10
+8106 Floor4FlyerXHi ; ... objWorldXHi
+810A Floor4FlyerY ; ... flyerPointY: Y of the point sprites, flyers start at +4
+810E Sprite0Init ; sprite 0 (Y, tile, attr, X), behind the background: WaitSprite0Hit splits the status bar
+8112 FloorSpawnStep ; spawnStep by floorGoesRight
+8114 FloorStartPage ; scrollPage by floor (bytes 0-4 overlap the next table), player objWorldXHi by floorGoesRight
+8117 BossStartXHi ; by floorGoesRight
+8119 BossStartX
+811B PlaqueColumn ; plaqueColumn by floorGoesRight: row 11, column 0 or 29 of the incoming nametable
+811D PlayerStartX ; playerEdgeX and player objWorldX by floorGoesRight
+811F WalkInInput ; playerInput while the player walks in, by floorGoesRight
+8121 BannerPlayerFloor ; "PLAYER n FLOOR n" characters, copied backwards
+812A ThrowerSpawnDelay ; by floor*4+difficulty: every Nth enemy from one side becomes a knife thrower (throwerDelay; +2 in game A on floors 2-5)
+813E FloorClearSteps ; jump table: floorClearStep
+8152 SylviaSprite0 ; sprite 0 for the Sylvia scene
+8156 BannerTemplate ; ppuBuffer template of the floor banner
+8163 GameOverText ; ppuBufLen.. template: "GAME OVER" for one player
+8184 DemoInputs ; playerInput of the demo, step by demoInputIndex
+81EE DemoInputTimes ; frames of each DemoInputs step (0 ends)
+8258 Reset ; RESET vector
+82D8 Nmi ; NMI vector: the whole game runs here (RESET ends in an endless loop)
+8396 RunGameMode ; displayOn: GameModeHandlers[gameMode], else ModeScripts[gameMode][modeStep++]
+83E7 InitPpu ; clear nametables, hide sprites, PPUCTRL/scroll defaults
+83F0 ScriptPalette
+83F4 ScriptPaletteRts
+83F5 TitleSprites ; 3 sprite records: cursor and marks
+8401 TitleInit ; clears both players' state, title attributes
+8428 PutTitleCursor ; cursor Y by gameSelect
+8440 TitleHandler ; GM_TITLE: SELECT cycles gameSelect, START starts, demo when modeWaitTimer runs out
+84A9 InitRun ; frame counters, demo script start, rngState = 6 (or 0 in the demo)
+84CA ClearGameRam ; $60-$FF and $0300-$07FF except $0500 page
+84FC LoadPlayerState ; curDefeatCount, difficulty, floor, floor palette
+852C ScriptNop
+852D ScriptFloorAttrs
+853D SetupFloor ; scenery job, boss and player slots, floor direction, start positions, health
+85E8 SetNormalFloorEvents ; floorEvent = UpdateBossAndSpawns
+85EA SetFloorEvent ; floorEvent = FloorEventHandlers[Y]
+85F6 PutHud ; lives, loop marker, top score, scores
+8649 LoadScoreP1 ; scoreP1 -> score, then PutScoreAt
+8658 LoadScoresP1First ; player 2 playing: P1 first, then P2 (the current player's score is loaded last)
+865B LoadScoreP2
+8668 PutScoreAt ; A = PPU address low byte
+8673 ScriptFloorText ; floorBanner on, PPUJOB_PLAYER_FLOOR (not in the demo)
+867D ScriptFloorRows
+867F SetPpuJob
+8682 ScriptFloorBanner ; "PLAYER n FLOOR n", floor markers, MUSIC_GAME_START, throwerDelay
+86F2 ScriptEnd ; displayOn, modeStep = 0
+86FD FloorStartHandler ; GM_FLOOR_START: the player walks in by itself, then GM_PLAY
+8760 PlayHandler ; GM_PLAY: one game frame; lost life -> GM_FLOOR_START or GM_GAME_OVER
+8891 GoFloorStart
+8893 SetGameMode ; A = gameMode, display off for its ModeScripts
+8899 RestartModeScript
+88A7 RestartModeScriptRts
+88A8 CheckPause ; START (joypads+1) toggles paused, with MUSIC_PAUSE / MUSIC_UNPAUSE
+88ED CheckPauseRts
+88EE GameOverHandler ; GM_GAME_OVER: wait, next player or back to the title
+8929 BackToTitle
+8931 ScriptPaletteAll
+8936 SylviaSceneInit
+8954 SylviaHandler ; GM_SYLVIA_SCENE: shouts (DMC_SEQ_A), HELP ME blinking
+898E PutSylviaSprites
+899F PutSylviaSpritesRts
+89A0 SylviaSceneAnimate ; Thomas pose toggle every 6 frames, "HELP ME" blink every 12
+89DD BuildOam ; oamIndex from $18; every other frame swaps the order of the sprite lists (flicker)
+8A08 CopySprListA ; sprListA -> oamBuffer at oamIndex
+8A27 CopySprListB ; sprListB -> oamBuffer at oamIndex
+8A46 CopySprListC ; sprListC -> oamBuffer at oamIndex, then the rest from $052F
+8A81 FloorClearHandler ; GM_FLOOR_CLEAR: FloorClearSteps[floorClearStep]
+8AB0 RunFloorClearStep
+8AC2 FloorClearWait ; step 0: the player finishes the current action
+8B1D FloorClearStairs ; step 1: stairs job by direction
+8B27 FloorClearScroll ; steps 2 and 6: scroll to the stairs
+8B5A NextFloorClearStep
+8B61 FloorClearStepRts
+8B62 FloorClearClimb ; step 3: walk to the stairs and climb
+8BAE StartFloorClearMusic
+8BC0 ClimbStairsStep ; objY >= $40: 8 px up and 8 px forward on the stairs
+8BCF FloorClearTally ; step 4: HealthBonus, then TimeBonus
+8BF5 FloorClearTallyRts
+8BF6 FloorClearTimeBonus ; after HealthBonus: TimeBonus, then the next step
+8C16 FloorClearNext ; step 5: next floor, Sylvia scene after floors 2 and 4, ending after floor 5
+8C45 FloorClearFloor5 ; step 7: floor 5 only: Sylvia appears
+8C64 EndingSprites
+8C68 EndingSpritesA ; ending, first time: 5 heart sprites around Thomas and Sylvia (Mesen screenshot)
+8C7C EndingBlinkOffset ; by endingAnim (0-4): the heart hidden this frame
+8C81 EndingSpriteY ; ending after a later loop (curDefeatCount != 0; Mesen with curDefeatCount forced): 13 heart sprites of the right half of a big heart, mirrored at X $7C into 26; one goes dark in turn
+8C8E EndingSpriteX ; ... X of those 13 (the left half: 2*$7C - X)
+8C9B EndingHandler ; GM_ENDING
+8D66 PutEndingSpritePair
+8D69 PutEndingSprite
+8D6E EndingInit ; clears the screen, MUSIC_ENDING
+8DA9 ScriptCongratulations
+8DB3 SetPpuJob2
+8DB6 ScriptFloorMarker
+8DBF ReadDemoInput ; playerInput from the demo script (dat_8184 values, dat_81EE durations)
+8DE7 ResetScroll
+8DFC WaitSprite0Hit ; then runs the per-frame game routines (split screen)
+8E5F SetGameScroll ; PPUSCROLL from scrollX, nametable from scrollNametable | ppuCtrlExtra
+8E75 SetEdgeScroll ; split for the band with the player (background tiles): scroll X = playerEdgeX moves him at the floor ends
+8E89 SetPpuCtrlNametable
+8E97 DelayLoop ; X * $10 loops
+8EA0 DrawMetasprite ; ptr_03 = frame, ptr_00/01 = X (16-bit, page 1 = on screen), ptr_02 = Y, ptr_05 = attributes, ptr_05+1 = sprLenA
+8F2E ClearNametables
+8F3D ClearNametable ; A = PPU address high byte
+8F7A DisplayOff
+8F80 HideAllSprites ; Y = 0..255: oamBuffer = $F8
+8F8B InitPpuCtrlScroll
+8F9F ReadJoypads
+8FB7 ReadJoypad ; X = pad; reads until two reads agree (DPCM-safe)
+9010 PpuStrings ; first: ppuJob $25-$4E, the player drawn as background tiles in the screen centre; records: PPU address hi, lo, control (bit7 vertical, bit6 repeat one byte, bits0-5 count), data; $00 ends
+9031 PlayerFrame01 ; ppuJob PPUJOB_PLAYER+$01
+9052 PlayerFrame02 ; ppuJob PPUJOB_PLAYER+$02
+906E PlayerFrame03 ; ppuJob PPUJOB_PLAYER+$03
+908A PlayerFrame04 ; ppuJob PPUJOB_PLAYER+$04
+90AF PlayerFrame05 ; ppuJob PPUJOB_PLAYER+$05
+90D4 PlayerFrame06 ; ppuJob PPUJOB_PLAYER+$06
+90F5 PlayerFrame07 ; ppuJob PPUJOB_PLAYER+$07
+9116 PlayerFrame08 ; ppuJob PPUJOB_PLAYER+$08
+9136 PlayerFrame09 ; ppuJob PPUJOB_PLAYER+$09
+9156 PlayerFrame0A ; ppuJob PPUJOB_PLAYER+$0A
+9172 PlayerFrame0B ; ppuJob PPUJOB_PLAYER+$0B
+918E PlayerFrame0C ; ppuJob PPUJOB_PLAYER+$0C
+91B0 PlayerFrame0D ; ppuJob PPUJOB_PLAYER+$0D
+91D2 PlayerFrame0E ; ppuJob PPUJOB_PLAYER+$0E
+91ED PlayerFrame0F ; ppuJob PPUJOB_PLAYER+$0F
+9208 PlayerFrame10 ; ppuJob PPUJOB_PLAYER+$10
+9223 PlayerFrame11 ; ppuJob PPUJOB_PLAYER+$11
+923E PlayerFrame12 ; ppuJob PPUJOB_PLAYER+$12
+9257 PlayerFrame13 ; ppuJob PPUJOB_PLAYER+$13
+9270 PlayerFrame14 ; ppuJob PPUJOB_PLAYER+$14
+9295 PlayerFrame15 ; ppuJob PPUJOB_PLAYER+$15
+92BA PlayerFrame16 ; ppuJob PPUJOB_PLAYER+$16
+92DB PlayerFrame17 ; ppuJob PPUJOB_PLAYER+$17
+92FC PlayerFrame18 ; ppuJob PPUJOB_PLAYER+$18
+9321 PlayerFrame19 ; ppuJob PPUJOB_PLAYER+$19
+9346 PlayerFrame1A ; ppuJob PPUJOB_PLAYER+$1A
+9367 PlayerFrame1B ; ppuJob PPUJOB_PLAYER+$1B
+9388 PlayerFrame1C ; ppuJob PPUJOB_PLAYER+$1C
+93AD PlayerFrame1D ; ppuJob PPUJOB_PLAYER+$1D
+93D2 PlayerFrame1E ; ppuJob PPUJOB_PLAYER+$1E
+93F4 PlayerFrame1F ; ppuJob PPUJOB_PLAYER+$1F
+9416 PlayerFrame20 ; ppuJob PPUJOB_PLAYER+$20
+9434 PlayerFrame21 ; ppuJob PPUJOB_PLAYER+$21
+9452 PlayerFrame22 ; ppuJob PPUJOB_PLAYER+$22
+9472 PlayerFrame23 ; ppuJob PPUJOB_PLAYER+$23
+9492 PlayerFrame24 ; ppuJob PPUJOB_PLAYER+$24
+94B1 PlayerFrame25 ; ppuJob PPUJOB_PLAYER+$25
+94D0 PlayerFrame26 ; ppuJob PPUJOB_PLAYER+$26
+94F7 PlayerFrame27 ; ppuJob PPUJOB_PLAYER+$27
+951E PlayerFrame28 ; ppuJob PPUJOB_PLAYER+$28
+953D PlayerFrame29 ; ppuJob PPUJOB_PLAYER+$29
+955C JobErasePlayer
+9581 JobTitleAttrs
+96E9 JobFloorAttrs
+97A7 JobFloorScenery ; + floor variants: JobFloorScenery1, JobFloorScenery2
+981F JobFloorScenery1
+9888 JobFloorScenery2
+98F1 JobStairs ; walking right
+9926 JobStairs1 ; walking left
+995B JobFloorRows
+99DA JobSylviaAttrs
+9A0E JobHelpMe
+9A22 JobSylvia
+9A2C JobHelpMeClear
+9A35 JobCongratulations
+9A79 JobEndingText
+9AAA JobTimeOver
+9AC1 JobPlayerFloor ; "?PLAYER ?FLOOR" (tile $14 in place of the digits)
+9AD7 JobReady
+9AE2 JobClearText
+9AEB PlayerFrameSets ; by attack: (playerAction & (PA_PUNCH|PA_KICK)) >> 3 -> none, kick, punch
+9AF1 PlayerFramesNormal ; by playerAction & (PA_CROUCH|PA_JUMP|PA_HIT): stand, crouch, jump, jump, hit
+9AFB PlayerFramesKick ; stand, crouch, jump
+9B01 PlayerFramesPunch ; stand, crouch, jump
+9B07 PlayerFramesStand ; ppuJob by playerPose * 2 + facing right; lists overlap (pose 2 of a standing player reads on into the next list)
+9B0B PlayerFramesStandPunch
+9B11 PlayerFramesStandKick
+9B17 PlayerFramesCrouchKick
+9B1D PlayerFramesCrouch ; also the crouching punch
+9B23 PlayerFramesJump
+9B2F PlayerFramesJumpKick
+9B31 PlayerFramesJumpPunch
+9B3B PlayerFramesHit
+9B3F BitMasks ; $01, $02, $04, $08 (also read by BIT through BitMask02 / BitMask04)
+9B40 BitMask02
+9B41 BitMask04
+9B43 PlayerActionHandlers ; jump table by playerAction & (PA_CROUCH|PA_JUMP|PA_HIT): stand, crouch, jump, jump, hit
+9B4D PlayerRestPose ; first playerPose after an action, by playerAction & 3 >> 1
+9B50 ScrollStopPageL ; floors walked leftwards: scrollPage where the scroll stops, by playerWalk
+9B53 ScrollStopXL ; ... and scrollX
+9B56 ScrollStopPageR ; floors walked rightwards
+9B59 ScrollStopXR
+9B5C PlayerEdgeLimit ; by playerWalk ^ 3: how far playerEdgeX goes once the scroll stopped
+9B5F ScrollStep ; scroll / position step by playerWalk: 0, +1, -1 (+2, -2 unused?)
+9B64 JumpStepTime ; frames per jump step, by playerPose (counts down)
+9B70 AttackPoseTime ; frames per attack pose, by playerPose
+9B75 GrabDrainTime ; frames between energy losses, by number of grabbers (+4 when hardRules = 0)
+9B7E JumpY ; objY of the player per jump step ($87 = ground)
+9B89 EnemyStopDist ; by objType - 2: an enemy this close in front stops the scroll
+9B90 ObjectHandlers ; jump table: objType
+9BB4 ObjectAnimSets ; by objType: AnimSet* (objPose -> metasprite) for DrawObjects
+9BDA AnimSetGripper ; objPose -> metasprite (not used: DrawObjects draws grippers from GripperTiles)
+9BEE AnimSetSmallEnemy ; objPose -> metasprite
+9C08 AnimSetKnifeThrower ; objPose -> metasprite
+9C18 AnimSetBoss1 ; objPose -> metasprite
+9C2E AnimSetBoss2 ; objPose -> metasprite
+9C3C AnimSetBoss3 ; objPose -> metasprite
+9C52 AnimSetBoss4 ; objPose -> metasprite
+9C62 AnimSetBoss5 ; objPose -> metasprite
+9C90 AnimSetBoss4Double ; objPose -> metasprite
+9C9A AnimSetPlayer ; objPose -> metasprite
+9CA6 AnimSetFlyer ; objPose -> metasprite (types $0A-$0C)
+9CA8 AnimSetDragonBall ; objPose -> metasprite
+9CAA AnimSetDragon ; objPose -> metasprite
+9CAC AnimSetPot ; objPose -> metasprite
+9CAE AnimSetSnake ; objPose -> metasprite
+9CB2 AnimSetBoss4Missile ; objPose -> metasprite
+9CB6 AnimSetSylvia ; objType $12 (SpawnSylvia): objPose -> metasprite
+9CBA MetaBoss1_0
+9CCB MetaBoss1_1
+9CDC MetaBoss1_2
+9CF1 MetaBoss1_3
+9D08 MetaBoss1_6
+9D1F MetaBoss1_7
+9D37 MetaBoss2_0
+9D49 MetaBoss2_1
+9D5B MetaBoss2_4
+9D6F MetaBoss3_0
+9D81 MetaBoss3_1
+9D93 MetaBoss3_2
+9DA5 MetaBoss3_3
+9DBD MetaBoss3_6
+9DCE MetaBoss3_7
+9DE6 MetaBoss3_10
+9DFB MetaBoss4_0
+9E0B MetaBoss4_1
+9E1C MetaBoss4_2
+9E2D MetaBoss4_3
+9E3F MetaBoss4_4
+9E52 MetaBoss4_5
+9E5F MetaBoss4_6
+9E6C MetaBoss5_0
+9E7D MetaBoss5_1
+9E8E MetaBoss5_2
+9EA2 MetaBoss5_3
+9EB6 MetaBoss5_4
+9EC7 MetaBoss5_6
+9ED7 MetaBoss5_7
+9EEC MetaBoss5_5
+9EFD MetaBoss5_11
+9F11 MetaBoss5_13
+9F20 MetaBoss5_15
+9F36 MetaBoss5_14
+9F45 MetaBoss5_17
+9F56 MetaBoss5_19
+9F69 MetaBoss5_21
+9F79 MetaPlayer_2
+9F89 MetaPlayer_5
+9F99 MetaSylvia_0
+9FA8 MetaSylvia_1
+9FB2 GripperPoseTiles ; objPose -> offset into GripperTiles (+5 when facing right)
+9FBB GripperTiles ; gripper frames: columns of 5 tiles, drawn top to bottom by DrawObjects
+A01F MetaSmallEnemy_0
+A02B MetaSmallEnemy_1
+A033 MetaSmallEnemy_4
+A03E MetaSmallEnemy_9
+A049 MetaSmallEnemy_10
+A054 MetaSmallEnemy_11
+A05F MetaSmallEnemy_12
+A06B MetaKnifeThrower_0
+A07C MetaKnifeThrower_1
+A08D MetaKnifeThrower_3
+A09F MetaKnifeThrower_4
+A0B2 MetaKnifeThrower_5
+A0C6 MetaKnifeThrower_6
+A0D9 MetaKnifeThrower_7
+A0EA MetaBoss5_22
+A0FB MetaBoss4_7
+A108 ObjDownPose ; objType 0-9 -> objPose while knocked out (UpdateObjects)
+A112 ObjSprAttr ; objType -> sprite attributes (palette); bit 6 is set when objFacing = 1
+A125 GrabOffsetX ; objWorldX of a gripper holding the player: player X + this, by grabber count * 2 + objFacing
+A12D GripperGrabDX ; by objFacing: grabs when objX+6 + GripperGrabDX < objX <= objX+6 + GripperGrabDX2
+A12F GripperGrabDX2 ; by objFacing (0: 3-6 px right of the player, 1: 2-5 px left)
+A131 ObjSprOffsetX ; objType -> X of the metasprite's left edge, relative to objX
+A144 FlyerStateHandlers ; jump table (lo/hi read by Y)
+A152 EnemyAltChance ; by difficulty*4+floor-1: rngState,X at or above it -> objState OBJST_ALT|OBJST_ACTIVE (0 = never); floor 1 would read $A251 (index $FF), but floor 1 spawns only grippers, which return before (Mesen)
+A162 Floor2ObjDelay ; floor2DropTimer before the next floor-2 object: random 0-3, minus difficulty, +3 in game A
+A166 Floor2ObjTypes ; objType of the next floor-2 object, by floor2ObjCount (later random)
+A17B Floor2DropXRight ; drop X ahead of a standing player facing right (random 0-7)
+A183 Floor2DropXLeft ; same, facing left
+A18B Floor2DropXWalk ; drop X ahead of a walking player (random 0-15)
+A19B FlyerDiveLimit ; by flyerMode-1: flyerDiveStep at which flyerDiveDir flips (mode 1 never reads it; mode 6 reads index 5, past the table: FlyerSpeed+2 = $80)
+A19E FlyerSpeed ; WalkStepFrac by flyerPattern
+A1A5 FlyerWaveA ; by flyerPattern: dive speed in mode 2 (objSubY step); half of it is the small wave speed
+A1AC FlyerWaveB ; by flyerPattern: dive speed in modes 3 and 6
+A1B3 DragonStepCount ; DragonHandler: step counts by state (objMode)
+A1BA MetaFlyer_0
+A1C5 MetaDragonBall_0
+A1CC MetaDragon_0
+A1DE MetaPot_0
+A1E5 MetaSnake_0
+A1EF MetaSnake_1
+A1F9 MetaMissile_0
+A1FF MetaMissile_1
+A205 DragonBreathTiles ; dragon fire breath (objMode 3, Mesen): 4 columns of 2 sprites (the lower row flipped) at Y $8E
+A20D DragonBreathDXLeft ; by objStep-1: X offset (objX - this), facing left: in front of the dragon
+A212 DragonBreathDXRight ; ... facing right
+A217 DragonBreathTileL ; by objStep-1: first DragonBreathTiles index, facing left
+A21C DragonBreathTileR ; ... facing right
+A221 DragonStepTime ; DragonHandler: objActTimer per step
+A228 SmokeColumns ; smoke column records: sprite count, then that many tiles from the top (drawn twice, the second column mirrored)
+A229 SmokeTiles
+A24A SmokeRec2 ; objMode 2 (ObjAppear / ObjVanish, floor 4 boss), by objStep-1: SmokeColumns record
+A251 SmokeY2 ; ... Y offset from objY
+A258 SmokeRec5 ; objMode 5 (the dragon rises from its ball, Mesen), by objStep-1: SmokeColumns record
+A25F SmokeRec6 ; objMode 6 (the dragon vanishes after its breath or when beaten, Mesen), by objStep-1
+A265 SmokeY5 ; ... Y offset, mode 5
+A26C SmokeY6 ; ... Y offset, mode 6
+A272 FragmentStepFrac ; fragment speed (high nibble) -> fraction per frame
+A279 FragmentStep ; fragment speed (low nibble, +1 on carry) -> pixels per frame
+A283 MissileFallDY ; Boss4MissileHandler: Y step by objSubStep
+A286 FragmentVelA ; BurstObjHandler: per fragment, -> fragmentSpeedX
+A289 FragmentVelB ; -> fragmentSpeedY
+A291 SpawnOffsetX ; spawn X relative to scrollX, by side
+A293 SpawnRightEndPage ; by floorGoesRight: enemies come from the right edge (spawnSide 1) only while scrollPage:scrollX < this:SpawnRightEndX ($0560 / $03C0)
+A295 SpawnRightEndX
+A297 SpawnLeftStartPage ; by floorGoesRight: enemies come from the left edge (spawnSide 0) only while scrollPage:scrollX >= this:SpawnLeftStartX ($0280 / $00A0)
+A299 SpawnLeftStartX
+A29B GroupDelays ; frames before the next group, by floor * 4 + difficulty (groupWait; +$30 in game A)
+A2AF SpawnDelays ; frames between the enemies of a group, by spawnDelaySet + enemy
+A2CF SpawnSides ; side (xor facing) of each enemy of a group, 4 per pattern
+A2E7 SpawnTablesLo ; per floor: one spawn byte per spawnStep ($4B): bit 2 none, bits 0-1 delay set, bits 3-5 SpawnSides pattern, bits 6-7 type (0 gripper, $40 small, $80 random of both)
+A2EC SpawnTablesHi
+A2F1 SpawnFloor1
+A33B SpawnFloor2
+A385 SpawnFloor3
+A3CF SpawnFloor4
+A419 SpawnFloor5
+A463 PlaqueNumeralTop ; wall plaques: kanji numerals 1-6 (tiles $E0-$EB), 2 tiles per page: upper
+A464 PlaqueNumeralBottom ; lower tile
+A471 PlaqueSidesTop ; upper row of the 3-tile plaque: offset 3 normally, 0 at page 6 (end sign $EC/$ED)
+A477 PlaqueSidesBottom ; lower row
+A47D UpdatePlayer ; reads playerInput: walk, crouch, jump, punch/kick, shake off grippers
+A4E1 CheckPlayerJump ; up starts a jump, down crouches; Z clear when the action changed
+A510 SetPlayerPoseSec ; playerPose = A, carry set
+A514 CheckJumpAction
+A53D ReturnClc ; shared exit: carry clear
+A53F PlayerFaceInput ; not jumping: SetPlayerFacing
+A563 CheckPlayerAttack ; A punches, B kicks (pose 3, or A at entry loc_A565)
+A565 CheckAttackButtons ; playerInput & (A|B)
+A5BB ShakeOffGrabbers ; held by grippers: 4 direction changes free 1-4 of them (fewer the longer held)
+A650 SetPlayerFacing ; right/left on playerInput -> PA_RIGHT
+A691 UpdateFloorScroll ; while the player walks: scrolls 1 px a frame (+1 every 8th, objSubX+6 += $20) unless a knife thrower or boss (objType 2-8) ahead is closer than EnemyStopDist; CheckFloorEnd per pixel, the floor end advances gameMode; moves spawnStep
+A792 CheckFloorEnd ; the scroll stops at ScrollStopPage*/ScrollStopX* (by floorGoesRight); playerEdgeX != 0 = already stopped
+A7B9 ScrollFloor ; scrollX/scrollPage and scrollMoved by ScrollStep[playerWalk]
+A7D4 ScrollCheckBossArea
+A7F0 MovePlayerEdge ; playerEdgeX and the player's objWorldX by ScrollStep while the scroll is stopped
+A800 AddScrollStep ; ptr_05+1 += ScrollStep[Y]
+A820 MovePlayerEdgeDone
+A821 UpdatePlayerAction ; dispatches PlayerActionHandlers when the player action timer runs out; handles playerHit
+A868 PlayerStand ; stand or crouch: attack poses, walk animation
+A87F EndPlayerAttack ; back to stand / crouch: playerAction & 3, PlayerRestPose
+A881 ClearPlayerActionBits ; playerAction &= A
+A88C SetActionTimer ; timersFast = A
+A88F PlayerStandWalk
+A8A3 EndPlayerAttackDone
+A8A4 PlayerJump ; jump arc from tables by playerPose
+A8D2 StopPlayerWalk
+A8D6 PlayerJumpDone
+A8D7 PlayerHitRecover
+A8E5 PlayerHitRecoverDone
+A8E6 SetPlayerFrameJob ; ppuJob for the player's frame by attack, action, pose and facing
+A930 SetPlayerFrameJobDone
+A931 RunFloorEvents ; JMP (ptr_5A) while the player is alive
+A939 UpdateBossAndSpawns ; boss near: bossActive, boss palette; turns grippers; spawns from the floor's table at spawnStep
+AB1A BossSpawnsDone
+AB1B MarkSpawnBit ; throwerSides |= BitMasks[ptr_07]
+AB3A Floor2Events ; until scrollPage 3: objects of types $0C-$11 from Floor2ObjTypes (at most 2 of $0D/$0E at once)
+AC24 PlayerObjHandler ; objType 9 (slot 6): RTS, the player is moved by UpdatePlayer
+AC25 Floor4Events ; until the player reaches page 4: flyers from the 4 points objX+7..+10 (slots 4..)
+ACCF FindFreeEnemySlot ; slots 3..0: X = free slot, carry clear; carry set when none
+ACD1 FindFreeSlotDown ; from slot X down to 0
+ACD9 FindFreeSlotDone
+ACDA UpdateObjects ; slots 0-6 (only the player slot 6 while the player is dead): ObjectHandlers[objType], knock-out fall, off-screen check
+ADD5 CallObjectHandler ; Y = objType*2
+ADE5 SmallEnemyHandler ; objType 1: a short enemy on the ground, floors 2-5 (Mesen screenshot)
+ADF9 GripperHandler ; objType 0: the most common enemy, spawned on every floor (the only kind on floor 1; docs/spawn_map.md)
+ADFC GripperOnScreen
+AE18 GripperNoGrab ; carry clear: no grab
+AE1A GripperGrab ; stops the player, takes his world position
+AE76 GripperGrabbedSec
+AE78 FlyerHandler ; objType $0A: flies under the ceiling (Y about $74), floor 4 only (Mesen)
+AE9C FlyerStateWait ; FlyerStateHandlers: wait for objActTimer, then objState = 1
+AEA6 FlyerPickMove ; random flyerMode 1-3 (0 -> 2); objSlowTimer $08-$18, flyerDiveStep 0, flyerDiveDir up when objY >= $98
+AEAC FlyerPickMode2
+AEAE FlyerSetMode
+AECC FlyerHandlerDone
+AECD FlyerStateMove ; FlyerStateHandlers: WalkStepFrac by FlyerSpeed, then MoveFlyer
+AED6 MoveFlyer ; vertical moves: the small wave (AddFlyerWave, flyerWaveDir flips every $18 steps) plus, except in mode 1, the dive (objSubY, flyerDiveDir flips at FlyerDiveLimit); objY kept in $6C-$B3; modes 1-3 may start a hover (6) or a turn (4) at random or at the floor 4 area ends
+AFAE FlyerStateInc ; flyerMode 5, second half of a turn: flyerState += $0A until it overflows, then a new move
+AFBB FlyerStateDec ; flyerMode 4, first half of a turn: flyerState -= $0A until it underflows, then turn round and mode 5
+AFC6 FlyerCheckMode5
+AFDC FlyerWalk
+AFE5 AddFlyerWave ; flyerWaveFrac += A; on carry objY +1 (flyerWaveDir 0) or -1 (AddObjYFromY)
+AFF9 FlyerStateHover ; flyerMode 6: no walking, MoveFlyer at step 0/2 (frameCounter) while objSlowTimer runs; a new move when it runs out or flyerDiveDir flips
+B015 MissileBackHandler ; objType $0B: flies to SetMissileTarget, then puffs out (not seen in Mesen)
+B044 AnimateFlip2 ; objPose ^= 2 every 4 frames
+B050 AnimateFlip2Done
+B051 BurstObjHandler ; objType $0C, floor 2: bursts into 3 fragments (fragment slots $0430) with a sound
+B0FE DragonHandler ; objType $0E, floor 2: steps by objMode (DragonStepCount / DragonStepTime), hidden while objState bit 3
+B170 DragonDone
+B171 DragonBallHandler ; objType $0D, floor 2: falls to Y $AA, then DragonBallOpen
+B178 DragonBallOpen ; puff, becomes OBJ_DRAGON on the floor
+B18F PotHandler ; objType $0F, floor 2: falls to Y $AA, breaks, after 14 frames becomes OBJ_SNAKE
+B19C ShowObject ; clears objState bit 3 (hidden)
+B1A2 FacePlayer ; objFacing = objLeftOfPlayer
+B1A8 PotFall
+B1C2 HideObjectAtY ; objY = A, then HideObject
+B1C4 HideObject ; sets objState bit 3
+B1CA HideObjectDone
+B1CB BecomeSnake
+B1D1 SnakeHandler ; objType $10: snake crawling on the floor (Y $A8), floors 2 and 4
+B1DE AnimateWalker ; grippers and small enemies: grab pose when close, pose toggles every 6 frames, then a walk step
+B1FF WalkStepNormal ; step of 1 + $88/256 px
+B201 WalkStepFrac ; A = fraction: step of 1 + A/256 px
+B203 WalkStep ; A = fraction, Y = whole pixels; returns the step, negative when facing left (objFacing 0)
+B21A AddObjWorldXY ; adds Y to objWorldX
+B21B AddObjWorldX ; adds A (signed) to objWorldX
+B22C SinkObject ; objY + 1 + $FF/256 per frame
+B23A AddObjYFromY ; objY += Y
+B23E FreeObject ; slot X fell off the screen; slot 6 (the player): demo end or TIME OVER / life lost
+B2B5 DrawPlayerOnly ; DrawObjects for the player slot only (floor clear, ending)
+B2C3 DrawObjects ; metasprites of the slots in drawOrder (index 6 down to 0) -> sprListA
+B2C5 DrawObjectLoop ; next slot of drawOrder
+B2F3 DrawObjectAttr ; attributes: ObjSprAttr | $40 when facing
+B338 DrawObjectExtra ; after the body: while objStep != 0 the extra sprites of DrawObjectState, then the next object
+B346 DrawObjectNext
+B350 DrawSmallObject ; objType >= $0A
+B462 DrawObjectSprites
+B4B9 DrawObjectState ; extra sprites by objMode while objStep runs: 1 the broken pot (mirrored pair), 3 dragon breath, 2/5/6 a smoke column (Smoke*)
+B625 DrawGripper ; objType 0: 2 columns of GripperTiles (1 column for 2 poses)
+B6C8 GripperDownEnd ; facing right: last index into GripperDownSprites, by clipping
+B6CB GripperDownEndL ; facing left
+B6CF GripperDownSprites ; (dy, tile, -, dx) per sprite of a gripper lying down
+B70F DrawGripperDown ; objType 0, pose 9: fixed sprite records
+B784 UpdateFragments ; 3 fragment slots: fly along velocity tables, then vanish
+B7F5 Boss4MissileHandler ; objType $11: missile cast by the floor 4 boss (Mesen)
+B884 FindDragon ; C = 1 when any slot holds OBJ_DRAGON
+B894 UpdateEffects ; 3 effect slots ($0437 tile $DB -> $DC -> $F0, $043A timer)
+B8C8 SpawnEffect ; a puff (UpdateEffects) at object X: floor 2 objects that burst, are hit or fall away
+B8F8 DrawEffects ; each puff: 2x2 sprites of effectTile, mirrored -> sprListB
+B971 DrawFragments ; tile $E4 -> sprListB
+B99F SortSlotsByDistance ; bubble sort of drawOrder+0..3 (slots 0-3) by objDistance, nearest first
+B9D3 CalcPlayerDistances ; slots 0-5: objDistance = |objWorldX - player|, objDistanceHi = high byte
+BA08 CalcSideOfPlayer ; slots 0-$0A: objLeftOfPlayer
+BA35 DrawFloor4Sprites ; floor 4 only (Mesen), during one player action (ptr_5A = $AC25): up to 8 sprites -> sprListC
+BAA0 DrawPagePlaque ; once per scroll page: the plaque with its page number (3x2 tiles) at plaqueColumn of the incoming nametable (Mesen screenshots)
+BB43 SpawnSylvia ; objType $12 in slot 0 (Sylvia scene, floor clear) (sheet type_12)
+BB6B KnifeY ; knife height: high / low throw
+BB6D KnifeThrowDelay ; timersSlow by rngState & 3
+BB71 KnifeLowChance ; lowThrowChance by floor for difficulty 0-1 (difficulty 2: KNIFE_LOW_CHANCE_D2, 3: KNIFE_LOW_CHANCE_D3)
+BB76 KnifeTurnDelay ; throwerTurnDelay by difficulty
+BB7A KnifeSpeed ; pixels per frame by difficulty
+BB7E KnifeSpeedFrac ; fraction per frame by difficulty
+BB82 KnifeThrowsPerTurn ; throwsPerTurn by difficulty
+BB86 KnifeThrowPoses ; objPose of a knife throw, step by step
+BB8A PlayerBoxTopAct ; player body box top by playerAction (stand, crouch)
+BB8F PlayerBoxBottomAct
+BB94 PlayerBoxTopJump ; ... by playerPose while jumping
+BB9E PlayerBoxBottomJump
+BBA8 PlayerBoxRight ; by facing
+BBAA SmallBoxTop ; by objType - OBJ $0A
+BBB2 SmallBoxBottom
+BBBA EnemyBoxTop ; by objType
+BBCC EnemyBoxBottom
+BBDE EnemyBoxLeft ; read by slot X (EnemyHitBox, only from CheckPlayerHits: slots 0-5); 18 entries like a per-objType table, 6-17 unused
+BBF0 EnemyBoxRight ; read by slot X like EnemyBoxLeft
+BC02 AttackBoxTop ; player attack box by attackKind (PlayerAttackBox): punch, kick, crouch punch, crouch kick, jump punch, jump kick
+BC08 AttackBoxBottom
+BC0E AttackBoxReach
+BC14 AttackBoxWidth
+BC1A HitSparkY ; by attackKind
+BC2A EnemyDamage ; damage to the player by objType; game A uses the second half (+18)
+BC4E HitDamageRow ; by objType: start of its row in HitDamage
+BC60 HitDamage ; hitDamage by row + attackKind
+BC96 PopupDX ; score popup X offset by facing
+BC98 BossBoxTop ; boss 1/3 attack box (CheckBossHits): index 1 for bossPhase 3, 0 for the other attacks
+BC9A BossBoxBottom
+BC9C BossBoxLeft
+BC9E BossBoxRight
+BCA0 FallSteps ; objY step by objFallStep
+BCC1 PointsRowLo ; objType -> PointsRows record (lo)
+BCD3 PointsRowHi
+BCE5 PointsRows ; 6-byte rows (by attackKind) per objType: index into ScoreIndex
+BD21 ScoreIndex ; points class -> ScoreEntries offset
+BD3B ScoreEntries ; high nibble: score digit, low nibble: amount (also the popup)
+BD6C EnemyAttackLeft ; by facing
+BD6E EnemyAttackRight
+BD70 EnemyAttackBottom
+BD72 EnemyAttackTop
+BD74 HudSprites ; 3 HUD sprites
+BD80 FloorMarkerLo ; floor -> FloorMarkerAddr record (lo)
+BD85 FloorMarkerHi
+BD8A FloorMarkerAddr ; PPU addresses of the 5 floor markers
+BD94 FloorMarkerTiles ; by floorMarkerBlink
+BD96 Boss5BoxTop ; floor 5 boss attack box by bossPhase - BOSS_ATTACK (attacks 2-4 and BOSS5_JUMP)
+BD9A Boss5BoxBottom
+BD9E Boss5BoxLeft
+BDA2 Boss5BoxRight
+BDA6 BossHitDmc ; by floor: DMC request stored in bossDmcSfx when the player dies from a hit
+BDAB HitPoseMap ; playerPose -> pose after being hit
+BDB6 KnifeThrowerMinX ; by floorGoesRight: a thrower facing right stops walking in at page FLOOR_X_MAX_HI, X >= this
+BDB8 KnifeThrowerMaxX ; by floorGoesRight: a thrower facing left stops at page 0, X < this
+BDBA SetKnifeThrowParams ; throwerTurnDelay, throwsPerTurn, lowThrowChance by difficulty and floor
+BDE1 KnifeThrowerHandler ; objType 2: throws a knife (knifeState) high or low on throw poses 4/6
+BF0B KnifeThrowerKeepRange ; keeps its distance: returns A = 0 walk, 1 throw, 2 stand (pose 0). At objDistance >= KT_TURN_DISTANCE it faces its spawn side (towards the player) again; below KT_TOO_CLOSE it turns away for throwerTurnDelay; in between it throws once objSlowTimer has run out
+BFA8 UpdateKnives ; 4 knife slots (one per enemy slot 0-3): move, hit the player
+C015 SpawnHitSpark ; at ptr_00 (Y), ptr_01 (X)
+C02A DrawKnives ; tile $0A -> sprListB
+C054 MoveKnife ; knifeX += speed by difficulty (+ fraction), sign by knifeState bit 4, + scrollMoved
+C08A PointHitBox ; box around the point (ram_000A, ram_000B) into ptr_00-03 (left, top, right, bottom), then PlayerBodyBox
+C0AC PlayerBodyBox ; the player's body box into ptr_00-03,X by playerAction (jump: by playerPose)
+C0E9 CheckHitBox ; boxes ptr_00-03 and ptr_03+1..ptr_07 overlap -> A = 1 (Z clear), else A = 0
+C11B SmallObjectHitBox ; box of objType $0A and up into ptr_00-03 + ram_000F
+C15F EnemyHitBox ; box of an enemy or boss by objType
+C1AF DrawHitSparks ; 3 slots $03D8 -> sprListB
+C1ED FindFreeSpark ; free sparkState slot -> ram_000F
+C1FE CheckPlayerHits ; player punch or kick against on-screen live objects in slots 5..0: spark, damage, points
+C2EE PlayHitSound ; noise effect 1 for enemies, square-1 effects for the objects $0A and up
+C2FC PlayHitSoundDone
+C2FD PlayObjHitSound
+C318 GetHitDamage ; hitDamage by objType and attackKind
+C32C CheckSmallObjectHits ; objType >= OBJ_FLYER (floor 2 objects, floor 4 flyers and missiles) touching the player: sound, damage; most are destroyed
+C429 EnemyAttackBox ; reach of an attacking enemy (objMode = 3) in front of it
+C458 DamageObject ; objHealth,X -= hitDamage
+C4F9 PlayDefeatSound ; DMC_DEFEAT
+C542 ClearHitDamage
+C548 AwardPoints ; points for slot X by objType and attackKind -> scoreAdd, starts a score popup
+C5FE DrawScorePopups ; score popups (popupPoints text, popupX, popupY, popupTimer) -> sprListB
+C65C PlayerAttackBox ; reach of the player's punch/kick by attackKind
+C6FE PlayerAttackBoxDone
+C6FF TickFloorTimer ; floorTime - 1 every 52/16 ticks while timerMode is set
+C716 DecFloorTime ; floorTime - 1; MUSIC_HURRY at 300; at 0: timeOver
+C773 PutFloorTime ; floorTime digits -> ppuBuffer (PPU $20DA)
+C79F ApplyObjectFall ; objY,X += fall step table[objFallStep,X]
+C7A6 AddObjY
+C7AB AddObjYDone
+C7AC UpdateHud ; health bars (X = 1 player, 0 enemy): health/8 tiles $FD through ppuBuffer, the rest as one sprite (PutBarEndSprite)
+C85F PutBarEndSprite ; fine end of a health bar: one OAM record behind the background at X $38 + 8*(health/8) + health%8
+C88C CheckBossHitsDone
+C88D CheckBossHits ; boss types 3 and 5 (floors 1 and 3; floor 3 only while bossHealth > 0): boss attack (step 1) against the player
+C93E CheckBoomerangHits ; flying boomerangs (not held or caught) against the player, once per throw (boomerangLive)
+C9BC SmallEnemyContact ; OBJST_ALT small enemy: hops over a crouching player; during the hop a standing or jumping player beats it, a crouching one is hit
+CB16 HopYRise ; small enemy hop: objY = start Y - $1E - step
+CB23 HopYFall ; objY = start Y - $28 + step
+CB30 HopYStart ; objY = start Y - step * 2
+CB3F HopYLand ; objY = start Y - $1E + step * 2
+CB51 CheckFragmentHits ; fragments of a type-$0C object against the player
+CBA5 AddScore ; score += scoreAdd (decimal digits), clears scoreAdd
+CBD0 PutScore ; score -> ppuBuffer
+CC00 UpdateTopScore ; top score of the game type (A: +0, B: +7) = score when higher
+CC32 PutTopScore ; top score -> ppuBuffer
+CC6C PutLives ; lives of the current player -> ppuBuffer
+CC92 SetHudSprites ; 3 HUD sprites from HudSprites -> oamBuffer+12
+CC9E HealthBonus ; floor clear: energy left -> points
+CCC6 BonusDoneSec
+CCC8 TimeBonus ; floor clear: floorTime counted down into points
+CCE9 CheckExtraLife ; once per player: lives+1 at 50000 points (score digit +2 >= 5; checked in Mesen)
+CD06 BlinkFloorMarker ; HUD floor indicator of the current floor blinks (floorMarkerBlink)
+CD5B CheckBoss5Hits ; boss type 7 (floor 5): attack (bossPhase 2-5, step 2) against the player
+CDDF BossAttackRange ; per floor: the boss stops walking and attacks when objDistance+5 is below this
+CDE4 BossWaitPage ; per floor: on objWorldXHi pages from this up to BOSS_WAIT_PAGE_END-1 an approaching boss stands still (BossWalkToPlayer; the floor 4 boss still walks right); elsewhere it walks to the player
+CDE9 BossBackOffTimeUnused ; read only by the unreachable code at $D596
+CDED Boss1AttackTime ; floor 1: objActTimer+5 per attack step (difficulty * 4 + step, or random 0-3 for the first step)
+CE01 BossAttackPoses ; first objPose+5 of an attack, by attack kind (ChooseBossAttack; +2 for BossCounterAttack)
+CE07 BossBackOffTime ; objSlowTimer+5 while backing off: difficulty * 4 + random 0-3
+CE17 BoomerangDelay ; objSlowTimer+5 before the next throw, random 0-3
+CE1B BoomerangThrowPoses ; objPose+5 by boomerangState + throw kind
+CE2F BoomerangArcDY ; Y step of a returning boomerang
+CE41 DifficultyThresholds ; RandomByDifficulty: 4 rngState+1 thresholds per difficulty
+CE51 RandomResultA ; RandomByDifficulty result A by class
+CE55 RandomResultB ; ... ptr_00
+CE59 BoomerangTiles
+CE5D BoomerangAttrs
+CE61 BossAttackTime ; floors 2-5: as Boss1AttackTime
+CE75 Boss4CastTime ; boss4CastTimer (or the double's timer) thresholds of the cast steps 3..1
+CE79 Boss4CastPoses ; objPose+5 by attack kind * 4 + cast step
+CE8E Boss4MissileY ; objY of the OBJ_BOSS4_MISSILE missile by attack kind
+CE91 Boss4CastDelay ; timersSlow+5 between casts: difficulty * 4 + random 0-3
+CEA1 Boss4BackOffTime
+CEA3 Boss4SparkDY ; B4T_SPARK, by bossHitAgain ($10 counting down, then 0): Y step of the sprite falling off the boss, 1 then 2 then 3 (it speeds up); its X moves 1 px a frame away from the player
+CEB4 Boss4SparkAttr
+CEBC Boss5Phases ; jump table: bossPhase of the floor 5 boss
+CECC Boss5AttackPoses
+CED1 Boss5StepTime ; objActTimer+5 per attack step
+CED5 Boss5JumpY ; objY+5 per jump step (boss5JumpStep)
+CEDB Boss5JumpTime
+CEE1 Boss5GuardChance ; rngState+4 at or below this (-$19 in game A): the boss blocks or jumps over the attack
+CF11 Boss5PartDY
+CF27 Boss5PartDX
+CF3D Boss5PartTiles
+CF3F BossChoiceLo ; per floor: pointer to 2 rngState+1 thresholds per difficulty (ChooseBossAttack)
+CF44 BossChoiceHi
+CF49 BossChoiceF1 ; floors 1 and 2
+CF51 BossChoiceF3
+CF59 BossChoiceF4
+CF61 BossChoiceF5
+CF69 BossCountLo ; per floor: pointer to 2 rngState thresholds per difficulty (SetBossAttackCount: 1-3 attacks)
+CF6E BossCountHi
+CF73 BossCountF1 ; floors 1 and 2
+CF7B BossCountF3
+CF83 BossCountF4
+CF8B BossCountF5
+CF93 Boss1Handler ; objType 3: floor 1 boss
+CFBF BossFight ; floors 1 and 3: bossPhase 0 approach, 1 back off, 2-4 attack steps
+CFE2 BossStartAttack ; ChooseBossAttack -> bossPhase, bossStep 2
+CFE9 BossSetAttack ; A -> bossStep, BossAttackPoses[Y] -> objPose+5
+CFF0 BossAttackStepTime ; next step time from Boss1AttackTime / BossAttackTime; noise effect 2 on the last step
+D02B BossFightDone
+D02C BossEndAttacks
+D02F Boss2Handler ; objType 4: floor 2 boss, throws boomerangs (SpawnBoomerang)
+D0D9 Boss3Handler ; objType 5: floor 3 boss
+D0F6 BossCounterAttack ; the boss was hit: new attack count, attack poses +2, bossStep 3
+D108 Boss3Fight
+D10B Boss4Handler ; objType 6: floor 4 boss (Mesen)
+D1B6 Boss4TryDouble ; floor 4: spawn the double (OBJ_BOSS4_DOUBLE) when bossWaitTimer, boss4CastTimer (cast) and boss4Trick are 0, boss4InRange is set and the player does not attack; later B4T_SWAP (Mesen: first ~1700 frames after the boss arrives, then every ~900)
+D224 StartBoss4Double ; double: appear steps, playerWalk = 0, boss timers
+D22C SetBossTimers ; A -> bossAttackWait, objSlowTimer+5, timersSlow+5, boss4CastTimer
+D235 Boss4DoubleDone
+D236 Boss4DoubleHandler ; objType 8: follows the player at boss4DoubleDist while the player walks (not seen in Mesen)
+D2DA ClampToFloorEnd ; objWorldX = $0690 (right end of the floor)
+D2E0 StoreWorldXStand ; objWorldX = A, objPose = 0
+D2E6 ClampDone
+D2E7 ClampToPage4 ; objWorldX = $0400
+D2EF Boss5Handler ; objType 7: floor 5 boss (Mesen)
+D31F Boss5Walk ; bossPhase 0-1
+D37D Boss5GuardRows ; difficulty -> row of Boss5GuardChance
+D381 Boss5Attack ; bossPhase 2-4: may block or jump over the player's attack (Boss5GuardChance)
+D3BD Boss5StartJump ; the player crouches without punching: jump over (bossPhase 5)
+D3DD Boss5WalkDone
+D3DE Boss5Block ; bossPhase 6, pose 4, hit noise
+D3ED Boss5BlockDone
+D3EE Boss5AttackStep
+D406 Boss5NextAttack
+D415 Boss5SetStepTime
+D41D Boss5EndAttacks
+D421 Boss5BackOff
+D432 Boss5StartBackOff
+D43C Boss5JumpPhase ; bossPhase 5: Boss5JumpY steps
+D46B Boss5JumpDone
+D46C Boss5BlockPhase ; bossPhase 6: until the player's attack ends
+D479 Boss5HitPhase ; bossPhase 7: knocked back for objActTimer+5
+D47E DrawBoss5Part ; floor 5 only (Mesen): extra boss sprites -> sprListA
+D4D4 ObjWalkClc
+D4D6 BossWalkLeft
+D4DA BossWalkRight
+D4DC BossWalk ; Y = direction
+D4DE ObjWalkStep ; slot X: pose flips every walkPoseTime frames, objSubX+5 += walkSpeedFrac
+D4FC BossApproach ; C = 1 when the player is within BossAttackRange (then SetBossAttackCount)
+D511 SetBossAttackCount ; bossAttacksLeft = 1-3 by BossCount* (floor 2: 3)
+D53F BossWalkToPlayer
+D55A BossGoLeft
+D55D BossGoRight
+D560 BossBackOff ; bossPhase 1: walk away until objSlowTimer+5 ends or the floor end
+D595 BossWalkDone
+D5A0 StartBossBackOff ; objSlowTimer+5 from BossBackOffTime, bossPhase 1
+D5B1 SetBossBackOff
+D5C5 ChooseBossAttack ; A, Y = attack kind 2, 3 or 4 by BossChoice*
+D5F5 WorldToScreenX ; slots 0-$10: objX/objXHi = objWorldX - scroll
+D60C BoomerangDone
+D60D SpawnBoomerang ; from the boss position (objX+5 - $16)
+D64F RandomByDifficulty ; X = 0-3: how many thresholds (4 per difficulty from $CE41) rngState+1 passes
+D673 SetBoomerangThrowPose
+D680 SetBoomerangPose
+D68D SetBoomerangPoseDone
+D68E UpdateBoomerangs ; 2 boomerang slots
+D77E MoveBoomerang
+D7F0 MoveBoomerangDone
+D7F1 DrawBoomerangs ; -> sprListB
+D837 Boss4Trick ; boss4Trick 1-5 (checked in Mesen)
+D8E9 ObjVanish ; slot X: 7 steps, objState bit 3 set at step 4
+D929 PlaceNearPlayerDone
+D92A PlaceNearPlayer ; objWorldX = player world X + ptr_00 (negated when objFacing is set)
+D961 ObjAppear ; slot X: 7 steps, objState bit 3 cleared at step 5
+D994 ObjAppearDone
+D995 Boss4DoublePhase ; boss4Trick 7 appear (then 50% swap places), 8-9: the pair swaps so that the double is on the left, it vanishes and its slot is freed (Mesen)
+D9B8 SwapBossAndDouble ; exchange position and facing of the boss and its double
+D9DF SwapDone
+D9E0 Boss4DoubleEnd
+DA07 Boss4CheckRange ; boss on screen and objDistance < $40 -> boss4InRange, attack unless backing off; else clears it
+DA4A Boss4Cast ; cast steps; at step 2 spawn an OBJ_BOSS4_MISSILE missile
+DAB1 SetMissileTarget ; missileTargetX/Hi = objWorldX -/+ $80
+DAE0 WritePpuRecord
+DB34 WritePpuStrings ; ptr_00 = PPU string records (format: PpuStrings)
+DB3E Palettes ; per floor: 4 colours copied to ppuBuffer+31 (LoadPlayerState)
+DB52 JobBossPal2 ; ppuJob PPUJOB_BOSS_PAL+1 (floors 1 and 3 use ppuBuffer)
+DB5A JobBossPal4
+DB62 JobSprPal23
+DB6E JobBossPal5
+DB76 JobSprPal3
+DB7E JobSprPal0
+DB86 JobPalette
+DBA2 JobSprPal2
+DBAA JobPaletteAll
+DBCE PaletteTemplate ; ppuBuffer record: palette
+DBF2 SamplePad ; $FF up to the first sample ($C000 + 64*n alignment)
+DC00 DmcSample1 ; dmcSfxQueue $01: jump kick shout
+DF00 DmcSample2 ; $02: kick shout
+E2C0 DmcSample3 ; $04: the player is hit
+E380 DmcSample10 ; $20: punch shout; start and length come from reading past the tables (DmcLengths+0, $FFF6)
+E500 DmcSample5 ; samples 5-9: sequences $10 (Sylvia scene, bosses 1, 2, 5), $40 (boss 3), $80 (boss 4)
+E6C0 DmcSample6
+E840 DmcSample7
+E980 DmcSample8
+EB00 DmcSample9
+EC40 DmcSample4 ; $08: the player is killed or the boss is beaten (the longest sample)
+EE80 DmcSample0 ; inside DmcSample4; not requested by any value
+F831 UpdateSound ; processes the sound requests $FB-$FF and clears them
+F852 Sq1SetRegs ; Y -> SQ1_SWEEP, X -> SQ1_VOL, then SetSq1Freq
+F858 SetSq1Freq ; A = note (even index into NotePeriods; 0 = rest)
+F85A SetChannelFreq ; X = channel register offset (0 SQ1, 4 SQ2, 8 TRI)
+F86C Sq2SetRegs ; X -> SQ2_VOL, Y -> SQ2_SWEEP
+F873 Sq2SetRegsFreq ; X -> SQ2_VOL, Y -> SQ2_SWEEP, then SetSq2Freq
+F876 Sq2SetSweepFreq
+F879 SetSq2Freq
+F87D SetTriFreq
+F883 Sq1PotNoisePeriod ; noise periods for sq1SfxTimer $0B-$0E (read as Sq1PotNoisePeriod-$0B,Y; $F881-$F882 unused)
+F887 Sq1PuffStart ; sq1 bit 0 (SFX1_PUFF): start (also the triangle)
+F895 Sq1Puff
+F8A6 Sq1PotStart ; sq1 bit 1 (SFX1_POT_BREAK): start
+F8B3 Sq1Pot ; timer > $0A: noise crackle; = $0A: sweep down
+F8DC Sq1SfxTick ; count sq1SfxTimer down, silence at 0
+F8E7 SilenceSq1Noise
+F8EF Sq1SfxRts
+F8F0 UpdateSq1Sfx ; request sq1SfxQueue (bits 0-2), effect sq1SfxPlaying
+F92A Sq2Sfx1Start ; sq2 bit 0: start
+F93A Sq2Sfx1
+F948 Sq2TallyStart ; sq2 bit 1 (SFX2_TALLY): start
+F958 Sq2SfxTick ; count sq2SfxTimer down, silence at 0
+F967 UpdateSq2Sfx ; request sq2SfxQueue (bits 0-1; 4 stops the music), effect sq2SfxPlaying
+F97E Sq2StopMusic ; SFX2_STOP_MUSIC
+F981 NoiseHitVol ; SFXN_HIT: NOISE_VOL for noiseSfxTimer 1..12 (read as NoiseHitVol-1,Y)
+F98D NoiseHitPeriod ; SFXN_HIT: NOISE_LO, indexed by noiseSfxTimer 1..12 (entry 0 unused)
+F99A NoiseSwingVol ; SFXN_SWING: NOISE_VOL, indexed by noiseSfxTimer 1..10
+F9A4 NoiseSwingPeriod ; SFXN_SWING: NOISE_LO, indexed by noiseSfxTimer 1..10
+F9AE NoiseThrowVol ; SFXN_THROW: NOISE_VOL, indexed by noiseSfxTimer 1..5
+F9B3 NoiseThrowPeriod ; SFXN_THROW: NOISE_LO, indexed by noiseSfxTimer 1..5
+F9B9 NoiseHitStart ; noise bit 0 (SFXN_HIT): start
+F9BE NoiseHit
+F9C9 NoiseSwingStart ; noise bit 1 (SFXN_SWING): start
+F9CE NoiseSwing
+F9D7 NoiseSetRegsJmp1 ; branch chain to NoiseSetRegs
+F9D9 UpdateNoiseSfx ; request noiseSfxQueue (bits 0-3), effect noiseSfxPlaying
+FA10 NoiseSetRegsJmp2
+FA12 NoiseStepStart ; noise bit 3 (SFXN_STEP): start
+FA1B NoiseSetRegs ; A -> NOISE_VOL, X -> NOISE_LO
+FA26 NoiseSfxTick ; count noiseSfxTimer down, silence at 0
+FA35 NoiseSfxRts
+FA36 DmcSeqSampleA ; sequence $10: sample number for dmcSfxStep 1..7 (read as DmcSeqSampleA-1,Y)
+FA3C DmcSeqRateA ; sequence $10 (dmcSfxStep 7..1): DMC rate; its samples are DmcSeqSampleA
+FA43 DmcSeqTimeA ; frames per step
+FA4A DmcSeqSampleB ; sequence $20 tables (not used: $20 plays sample 10)
+FA51 DmcSeqRateB
+FA58 DmcSeqTimeB
+FA5F DmcSeqSampleC ; sequence $40
+FA66 DmcSeqRateC
+FA6D DmcSeqTimeC
+FA74 DmcSeqSampleD ; sequence $80
+FA7B DmcSeqRateD
+FA82 DmcSeqTimeD
+FA8A UpdateDmcSfx ; dmcSfxQueue: $01, $02, $04, $08 play samples 1-4, $20 sample 10; $10, $40, $80 play 7-step sequences of samples 5-9 at changing rates (DmcSeq* tables)
+FB3C UpdateMusic ; request musicQueue: bit n starts song n+1 ($01: songs 9-18 one after another); 4 channels from one data block
+FBC2 StopMusic
+FBD0 MusicSq2NoteLen ; length byte: GetNoteLen, then the note byte
+FBDC MusicSq2Note ; note byte (unless an sq2 effect plays)
+FC09 MusicSq2Envelope
+FCD9 GetNoteLenPacked ; A = packed note: bits 7,6,0 -> length index, then GetNoteLen; X = the note byte
+FCDF GetNoteLen ; A & 7 + noteLenOffset -> NoteLengths
+FCE8 GetNoteLenRts
+FCE9 SongOffsets ; song number (from 1) -> offset of its header from here
+FCFB SongHdrFloorClear ; song header (6 bytes): note length set (offset into NoteLengths), data address, TRI / SQ1 / NOISE offsets in the data (0 = channel unused); SQ2 starts at offset 0
+FD00 SongHdrHurry
+FD05 SongHdrPause
+FD0A SongHdrUnpause ; request $80 (sub_88A8)
+FD0F SongHdrGameStart
+FD14 SongHdrGameOver
+FD19 SongHdrEnding
+FD1E SongHdrBgmA ; songs 1, 9-12, 15, 16
+FD24 SongHdrBgmB ; songs 13, 14, 18
+FD2A SongHdrBgmC ; song 17
+FD30 SongBgmA ; song data: SQ2 notes from offset 0; byte >= $80 = new note length (GetNoteLen), else note, $00 = end
+FD44 SongBgmB
+FD58 SongBgmC
+FD78 SongFloorClear
+FDA9 SongGameStart
+FE1B SongGameOver
+FE5D SongHurry
+FE65 SongPause
+FE6B SongUnpause
+FE71 SongEnding
+FF00 NotePeriods ; note -> timer period, high byte then low byte (index 0 = rest)
+FF58 NoteLengths ; note length in frames; songs pick a set of 8 by noteLenOffset
+FF7E Sq2Envelope ; SQ2 volume by envelope step (counts down)
+FF8E Sq1Envelope ; SQ1 volume by envelope step
+FFCD Sq1SfxVolume ; sq1 effect 1: volume by sq1SfxTimer
+FFE2 DmcStarts ; DMC sample start address >> 6, per sample
+FFEC DmcLengths ; DMC sample length >> 4, per sample
+FFF0 Irq ; IRQ/BRK vector: points at data; never used (no CLI anywhere, $4017 bit 6 set by UpdateSound)
+
+; ---- tables at the start of PRG
+words 800E-801B ; pointers to the jump tables below (index: game mode)
+split 8056 80A5 79 ; ppuJob -> PPU string records (NMI); jobs 0-4 etc. point to ppuBuffer, $25-$4E = player body frames
+data 80F4-80F7
+data 8102-813D
+data 8152-8257
+data 8C64-8C9A
+data 9010-9AEA ; PPU strings and update records
+words 9AEB-9B06 ; 3 pointers -> lists of pointers -> byte lists ($9B07-$9B3E)
+data 9B07-9B42
+words 9B43-9B4C
+data 9B4D-9B8F
+words 9B90-9BB3 ; jump table (object type)
+words 9BB4-9CB9 ; per object type: pointer to a list of metasprite pointers
+data 9CBA-A143 ; metasprites
+table 9FBB-A01E 5 ; GripperTiles: one column of 5 tiles per row
+note 9CBA ; Metasprite frame: columns, column entries, first column, then per entry: tile count, dY (added to Y), tiles (8 px apart downwards). Columns are 8 px apart and mirrored when attribute bit 6 is set.
+words A144-A151 ; jump table
+data A152-A47C
+data B6C8-B70E
+code BA2F-BA30 ; NOPs after JMP (unused)
+data BB6A-BD7F
+split BD80 BD85 5 ; PPU strings
+data BD8A-BDB9
+data CDDE-CEBB
+words CEBC-CECB ; jump table
+data CECC-CF3E
+split CF3F CF44 5 ; threshold byte pairs (index: $5F)
+data CF49-CF68
+split CF69 CF6E 5 ; threshold byte pairs (index: $5F)
+data CF73-CF92
+data D37D-D380
+code C4DE-C4E5 ; unreferenced
+code D596-D59F ; unreferenced
+data DB3E-F830
+data F881-F886
+data F981-F9B8 ; sound tables
+data FA36-FA89 ; sound tables
+data FCE9-FFF9 ; sound tables, note periods; $FFF0 = IRQ vector target (data, IRQ is never used)
+words FCFC-FCFD ; song headers at $FCE9+offset: [?, data pointer, ?, ?, ?] (5 bytes, overlapping)
+words FD01-FD02
+words FD06-FD07
+words FD0B-FD0C
+words FD10-FD11
+words FD15-FD16
+words FD1A-FD1B
+words FD1F-FD20
+words FD25-FD26
+words FD2B-FD2C
+split A2E7 A2EC 5 ; byte lists $A2F1-$A462
+split BCC1 BCD3 18 ; 6-byte records $BCE5-$BD20
+table BCE5-BD20 6 ; PointsRows: one row per objType class
+table BD8A-BD93 2 ; FloorMarkerAddr
+table CE41-CE50 4 ; DifficultyThresholds: 4 per difficulty
+table FCE9-FCFA 1 ; SongOffsets: header fields are read as SongOffsets+1..+5 by the header offset
+table FF00-FF57 2 ; NotePeriods: hi, lo
+ref F8C5 Sq1PotNoisePeriod-$0B
+ref F9C4 NoiseHitVol-1
+ref FAB8 DmcSeqSampleA-1
+ref FB70 SongOffsets-1
+; UpdateBossAndSpawns
+A950 @bossPage0 ; boss in page 0: near once objX >= $D0
+A956 @bossNear
+A96F @turnGrippers ; with enough live enemies, grippers turn to face away from their spawn side
+A982 @turnWhileMany
+A986 @nextGripper
+A9A5 @spawns
+A9C5 @groupWaitDone
+A9D7 @setDelaySet
+A9F6 @setGroupSize
+A9F9 @nextEnemy ; spawnLeft > 0: one more enemy of the group
+AA06 @pickSide ; SpawnSides[pattern*4 + spawnLeft-1] ^ facing
+AA13 @trySide ; ptr_00 = side, ptr_07 = facing of the new enemy
+AA30 @checkStop ; near the floor start and end no enemies from one side (SpawnRightEnd*, SpawnLeftStart*)
+AA49 @checkStopB
+AA59 @sideBlocked ; try the other side once (ptr_01 = $FF)
+AA68 @spawnHere
+AA6D @noFreeSlot
+AA6E @gotSlot
+AA7F @readType ; spawn byte at spawnStep + side: bits 6-7 -> objType
+AA91 @typeInY
+AA92 @setType
+AAAB @setWorldX
+AAB9 @setGap ; $38 frames while the player stands still, else SpawnDelays
+AAC7 @storeGap
+AAE2 @storeGroupWait
+AAE4 @throwerCheck ; floor 5: no knife throwers before scroll page 2
+AAF2 @throwerCountdown
+alias A939-AAFF 0000 spawnSide ; UpdateBossAndSpawns: side of the new enemy (SpawnSides ^ facing; 1 = from the right, 0 = from the left)
+alias A939-AA6D 0001 otherSideTried ; $FF once the other side was tried
+alias A939-AAC7 0004 enemyIndex ; spawnLeft - 1: index into SpawnSides / SpawnDelays
+alias A939-AA92 0005/2 spawnTable ; SpawnFloorN of this floor
+alias A939-AB39 0007 enemyFacing ; facing of the new enemy = spawnSide ^ 1 (objFacing; index of its throwerSides bit)
+
+; KnifeThrowerHandler
+BDE7 @walkIn ; not yet in page 1: walk in, alternate the walk poses
+BDF5 @walkStep
+BE12 @checkFloorEnd
+BE26 @hold
+BE2E @facingLeft
+BE39 @walkOn
+BE3C @holdLeft
+BE45 @onScreen
+BE59 @waitPose
+BE5A @checkKnife ; a knife still flying: back to the ready pose
+BE62 @newThrow ; clear timers, facing from OBJST_FACING; pick high (step 0) or low (step 2)
+BE71 @pickHeight
+BE7C @setThrowStep
+BE80 @nextPose
+BEA2 @releaseKnife
+BEAF @knifeRight
+BEB6 @setKnifeX
+BED1 @poseTime
+BED6 @throwDone ; after a throw pose: wait, count throws, turn after throwsPerTurn
+BF01 @readyAgain
+
+; SmallEnemyContact
+C9CD @checkAlt
+C9F8 @clearHopBits
+C9FF @hopping ; hopStep += lastStep, then pose and height by phase
+CA18 @setRise
+CA23 @hopRise
+CA39 @hopTop
+CA43 @hopFall
+CA59 @hopLand
+CA6F @hopEnd
+CA81 @checkContact ; hop box against the player body box
+CABE @setAttackKind
+CACF @noContact
+CAD5 @hitsPlayer ; crouching player: the hopping enemy hits the player
+CAE2 @damageGameA
+CAE4 @setDamage
+CB15 @hopDone
+
+; DrawObjectState
+B4C3 @notPair
+B4CA @drawLong ; objMode 3: dragon breath, 4 columns of 2 sprites from DragonBreathTiles by objStep and facing
+B4D5 @setLongAttr
+B4F6 @longRight
+B502 @longX
+B50D @longColumn
+B547 @nextLongColumn
+B552 @longSamePage
+B55B @drawPieces ; objMode 2, 5, 6: smoke column, record and height by objStep (SmokeRec*, SmokeY*)
+B56F @piecesMode6
+B57A @piecesMode5
+B582 @piecesY
+B595 @pieceColumn
+B5AF @pieceSprite
+B5D4 @nextPieceColumn
+B5DB @pieceSamePage
+B5E2 @drawPair ; objMode 1: two mirrored sprites on the floor
+B5F0 @pairSprite
+B60E @nextPairSprite
+B61D @pairSamePage
+
+; descriptions printed before the routines
+note 82D8 ; NMI = one frame. PPU work first (OAM DMA, PPU jobs, ppuBuffer strings, scroll and sprite 0 split),
+note 82D8 ; then timersFast / timersSlow countdown, ReadJoypads, rngState rotation, RunGameMode (the game
+note 82D8 ; itself), the warm-reset check and UpdateSound. RESET only initialises and waits in a loop.
+note 8760 ; One frame of play: scroll, objects and player, sprite lists (knives, boomerangs, sparks, metasprites,
+note 8760 ; fragments), floor events / spawns, sprite 0 wait, hits (boomerangs, bosses, player), player action,
+note 8760 ; floor timer, projectiles, spawns and the HUD. The demo reads its input from DemoInput instead.
+note A939 ; Floor event of floors 1, 3, 5 (and of 2, 4 after their own events). Part 1: once the boss slot comes
+note A939 ; near the screen edge, bossActive = 1, boss palette, bossWaitTimer; with enough live enemies the
+note A939 ; grippers turn away. Part 2: when spawnGapTimer and groupWait have run out, a new group starts from
+note A939 ; the spawn byte at spawnStep (size, delay set, side pattern) or the next enemy of the group spawns at
+note A939 ; the screen edge of its side. Every Nth enemy per side becomes a knife thrower (MarkSpawnBit); small
+note A939 ; enemies may get OBJST_ALT. Spawn byte format and the per-floor map: docs/spawn_map.md.
+note BDE1 ; Knife thrower: walks in until it is on screen (page 1) or reaches the floor end; then, standing,
+note BDE1 ; keeps its distance (KnifeThrowerKeepRange: turns away when too close) and throws high or low (lowThrowChance) through
+note BDE1 ; KnifeThrowPoses, the knife leaving at KT_POSE_HIGH_THROW / KT_POSE_LOW_THROW. After throwsPerTurn
+note BDE1 ; throws it waits throwerTurnDelay and turns round.
+note C9BC ; Small enemy with OBJST_ALT: when the player crouches at objDistance HOP_DIST_MIN..HOP_DIST_MAX-1 it
+note C9BC ; hops (hopState). hopStep advances with the scroll; HopYStart/Rise/Fall/Land set objY per phase.
+note C9BC ; While hopping its box is checked against the player body: a standing or jumping player beats it
+note C9BC ; (DEC objHealth, points), a crouching player takes HOP_DAMAGE_A / HOP_DAMAGE_B.
+note B4B9 ; Extra sprites of an object while objStep counts (called from DrawObjects for slots with objStep):
+note B4B9 ; objMode 1 the broken pot (a mirrored pair on the floor), 3 the dragon's fire breath in front of it
+note B4B9 ; (DragonBreath*), 2 / 5 / 6 a smoke column of two mirrored columns (Smoke*): 2 = ObjAppear / ObjVanish
+note B4B9 ; (floor 4 boss), 5 = the dragon rising from its ball, 6 = the dragon vanishing. Everything goes to sprListB.
+note FB3C ; Music: a musicQueue bit starts song n+1 (header from SongOffsets); every frame the SQ2, SQ1, TRI
+note FB3C ; and NOISE parts count their note timers down and read the next byte (format: README "Sound").

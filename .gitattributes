@@ -1,0 +1,9 @@
+* text=auto
+*.bat text eol=crlf
+*.sh text eol=lf
+Makefile text eol=lf
+*.chr binary
+*.cdl binary
+*.png binary
+*.bin binary
+*.nes binary

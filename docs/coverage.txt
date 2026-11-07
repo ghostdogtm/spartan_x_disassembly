@@ -1,0 +1,91 @@
+Game PRG coverage ($8000-$FFFF, 32768 bytes)
+
+code (CDL)       16345
+code (traced)     1075
+data             14840
+word tables        508
+unknown              0
+
+Unknown runs:
+
+Traced code (not in CDL):
+  $8506-$8507
+  $8779-$877E
+  $88FB-$88FD
+  $890D-$8911
+  $891F-$8928
+  $8BB3-$8BB5
+  $8C03-$8C04
+  $8D16-$8D6D
+  $8DE4-$8DE6
+  $A4C3-$A4C4
+  $A632-$A63E
+  $A70C-$A70F
+  $A7E1-$A7E3
+  $AA7D-$AA7E
+  $AB83-$AB86
+  $AC8D-$AC8E
+  $ACCE-$ACCE
+  $B015-$B04F
+  $B07C-$B07D
+  $B0FA-$B0FC
+  $B1CB-$B1D0
+  $B61B-$B61C
+  $B72F-$B736
+  $B74A-$B74F
+  $B80B-$B831
+  $B83E-$B851
+  $B859-$B868
+  $B884-$B893
+  $B8D2-$B8D2
+  $BDD3-$BDDC
+  $BE0E-$BE11
+  $BE26-$BE2D
+  $BE3C-$BE44
+  $BF8C-$BFA0
+  $C13D-$C149
+  $C4C9-$C4D7
+  $C540-$C541
+  $C582-$C585
+  $C6B3-$C6BA
+  $C6EE-$C6F5
+  $CABC-$CABD
+  $CADE-$CAE1
+  $CB6D-$CBA2
+  $CCBF-$CCC3
+  $CFB2-$CFB3
+  $CFF6-$CFF7
+  $D052-$D05C
+  $D06E-$D070
+  $D0C8-$D0D8
+  $D0F0-$D0F5
+  $D11E-$D120
+  $D1BE-$D222
+  $D224-$D22B
+  $D236-$D2D9
+  $D2E7-$D2EE
+  $D400-$D405
+  $D45A-$D462
+  $D87F-$D88B
+  $D8A0-$D8A1
+  $D932-$D93E
+  $D948-$D949
+  $D98E-$D991
+  $D995-$DA06
+  $DA41-$DA44
+  $DA91-$DA9F
+  $DB08-$DB08
+  $FABE-$FAEA
+  $FC32-$FC35
+
+Detected word tables (start, words, strong, weak, rts-adj, referenced):
+  $8000   7   7   0 0 True
+  $801C  29  29   0 0 False
+  $80F8   5   5   0 0 True
+  $813E  10  10   0 0 True
+
+Immediate pairs #<label/#>label: 0
+
+Raw operands (outside RAM/registers/ROM):
+
+CDL anomalies (code flag on bytes that do not decode):

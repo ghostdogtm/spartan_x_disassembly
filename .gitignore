@@ -1,0 +1,29 @@
+# Original ROM (copyrighted, not distributed) and every ROM built from the sources
+*.nes
+
+# Build output
+*.o
+*.map
+game_labels.txt
+
+# Emulator and third-party material kept locally
+/mesen
+
+# Profiling output and scratch files
+/out/
+/tmp/
+*.probe
+*.progress
+*.exec
+*.args
+*.slots
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

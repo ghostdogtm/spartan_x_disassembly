@@ -1,0 +1,978 @@
+; Constants for immediate operands (tools/disasm.py -> src/const.inc)
+; NAME = EXPR [@var ...] [; comment]   define; @var (RAM/register name, may be name+N): used automatically where the
+;                                      value is stored into var (LDx #v / STx var) or tested against it
+;                                      (LDx var / CMP|CPx|AND|ORA|EOR #v, also later CMPs with only branches between)
+; use AAAA [AAAA ...] EXPR             the immediate of these instructions is EXPR (checked against the byte)
+; EXPR is a ca65 expression: $hex %bin 'c', names, + - * / & | ^ ~ << >> ( ); a leading < or > = low / high byte.
+; Definitions may use earlier constants and RAM/register names. (?) = meaning guessed from the code.
+; Left as numbers on purpose: #0 / #1 used as clear / flag / step, the negation idiom EOR #$FF + ADC #1,
+
+; ---- PPU
+PPUCTRL_NT_MASK = %00000011             ; nametable select
+PPUCTRL_INC32 = %00000100 @ppuCtrlShadow ; PPUDATA address +32 (vertical)
+PPUCTRL_SPR_1000 = %00001000            ; sprite patterns at $1000
+PPUCTRL_BG_1000 = %00010000 @PPUCTRL     ; background patterns at $1000
+PPUCTRL_NMI = %10000000 @ppuCtrlShadow   ; NMI at vblank
+PPUCTRL_GAME = PPUCTRL_NMI | PPUCTRL_BG_1000 @PPUCTRL
+PPUMASK_BG_LEFT = %00000010             ; show background in the left 8 pixels
+PPUMASK_SPR_LEFT = %00000100            ; show sprites in the left 8 pixels
+PPUMASK_SHOW_BG = %00001000
+PPUMASK_SHOW_SPR = %00010000
+PPUMASK_OFF = PPUMASK_BG_LEFT | PPUMASK_SPR_LEFT @PPUMASK ; rendering off
+PPUMASK_ON = PPUMASK_SHOW_BG | PPUMASK_SHOW_SPR | PPUMASK_BG_LEFT @ppuMaskShadow ; ORed in while displayOn
+PPUSTATUS_SPR0 = %01000000 @PPUSTATUS   ; sprite 0 hit
+NAMETABLE0 = $2000
+NAMETABLE1 = $2400
+ATTR_OFFSET = $3C0                      ; attribute table inside a nametable
+TILE_BLANK = $FC                        ; empty background tile
+OAM_HIDE_Y = $F8 @oamBuffer             ; sprite Y below the screen
+SPRITE_BYTES = 4                        ; one OAM record
+TILE_PX = 8                             ; one tile / sprite is 8 pixels wide
+SPR_BEHIND = %00100000                  ; sprite attribute: behind the background
+SPR_FLIP_H = %01000000
+SPR_FLIP_V = %10000000
+struct Sprite ypos tile attr xpos ; one OAM record (oamBuffer, sprListA/B/C)
+array oamBuffer Sprite
+array sprListA Sprite
+array sprListB Sprite
+array sprListC Sprite
+use 82DA <~PPUCTRL_NMI
+use 8D76 8F44 <~PPUCTRL_INC32
+use 8DF4 <~(PPUCTRL_SPR_1000|PPUCTRL_INC32|PPUCTRL_NT_MASK)
+use 8E8D <~(PPUCTRL_INC32|PPUCTRL_NT_MASK)
+use 82EB >oamBuffer
+use 8F36 >NAMETABLE0
+use 8F3B >NAMETABLE1
+use 8D7B >(NAMETABLE0+$120)
+use 8D80 <(NAMETABLE0+$120)
+use 8D98 <ATTR_OFFSET
+use 8D89 8F57 TILE_BLANK
+
+; ---- APU
+SNDCHN_TONES = %00001111 @SNDCHN        ; square 1+2, triangle, noise
+SNDCHN_ALL = %00011111 @SNDCHN          ; ... and DMC
+APU_DUTY_50 = %10000000                 ; square duty 50 % (unused bit on noise)
+APU_DUTY_75 = %11000000
+APU_HALT = %00100000                    ; length counter halt / envelope loop
+APU_CONST = %00010000                   ; constant volume (low 4 bits)
+APU_SILENT = APU_DUTY_50 | APU_CONST    ; constant volume 0
+APU_LEN_SHIFT = 3                       ; length counter index in $4003/$4007/$400B/$400F
+SWEEP_ON = %10000000
+SWEEP_PERIOD_SHIFT = 4
+SWEEP_NEGATE = %00001000
+SWEEP_NONE = $7F                        ; sweep off; negate set so low periods are not muted
+TRI_LINEAR_MAX = $7F                    ; linear counter reload, control bit clear
+DMC_RATE_MAX = $0F
+use FB20 DMC_RATE_MAX
+use F8CB FCCD 3<<APU_LEN_SHIFT
+use FCC9 APU_CONST|4
+use FA19 APU_HALT|APU_CONST|15
+use F8C0 APU_SILENT|6
+use FA2B APU_DUTY_75|APU_HALT|APU_CONST
+use F8D7 F8E7 F961 APU_SILENT
+use F8D2 SWEEP_ON|1<<SWEEP_PERIOD_SHIFT|SWEEP_NEGATE|2
+use F923 SWEEP_ON|1<<SWEEP_PERIOD_SHIFT|3
+use FC4C SWEEP_NONE
+use FC8A TRI_LINEAR_MAX
+
+; ---- joypads (ReadJoypad shifts the first bit read, A, up to bit 7)
+BUTTON_RIGHT = %00000001
+BUTTON_LEFT = %00000010
+BUTTON_DOWN = %00000100
+BUTTON_UP = %00001000
+BUTTON_START = %00010000 @joypads @joypads+1
+BUTTON_SELECT = %00100000
+BUTTON_B = %01000000
+BUTTON_A = %10000000
+use 8370 844D BUTTON_START|BUTTON_SELECT
+use 845A BUTTON_SELECT
+use 8FF9 BUTTON_A|BUTTON_B
+use 900B <~BUTTON_A
+
+; ---- game
+WARM_BOOT_1 = $A5 @warmBootSig          ; RAM signature written after the first power-on
+WARM_BOOT_2 = $5A @warmBootSig+1
+TIMER_TICK_PERIOD = 10 @timerTick       ; timersSlow tick every TIMER_TICK_PERIOD+1 frames
+; timerMode values
+TIMER_STOPPED = 0 @timerMode         ; player killed
+TIMER_RUNNING = 1 @timerMode
+TIMER_TALLY = 2 @timerMode           ; time bonus tally: no hurry music, no TIME OVER
+FLOOR_TIME_STEP = $10              ; timerFrac += FLOOR_TIME_STEP per timer tick
+FLOOR_TIME_UNIT = $34              ; floorTime - 1 each time timerFrac reaches FLOOR_TIME_UNIT
+HURRY_HUNDREDS = 3                 ; MUSIC_HURRY when floorTime drops to 0300
+DECIMAL_BASE = 10                  ; floorTime digits
+use C707 FLOOR_TIME_STEP
+use C70C C711 FLOOR_TIME_UNIT
+use C739 HURRY_HUNDREDS
+use C744 C750 DECIMAL_BASE
+use C720 DECIMAL_BASE-1
+START_LIVES = 3 @lives
+DEMO_ON = SNDCHN_TONES @demoMode        ; NMI writes SNDCHN = demoMode ^ SNDCHN_TONES: the demo is silent
+use 849C SNDCHN_TONES
+enum ; gameMode: index into GameModeHandlers / ModeScripts
+GM_TITLE = 0 @gameMode                  ; title menu: 1/2 PLAYER GAME A/B (SELECT cycles gameSelect, START starts); demo after a while
+GM_FLOOR_START = 1 @gameMode            ; set up a floor and show it before play (also after losing a life)
+GM_PLAY = 2 @gameMode                   ; gameplay (also the demo)
+GM_FLOOR_CLEAR = 3 @gameMode            ; boss beaten: the player walks off, time bonus tally
+GM_GAME_OVER = 4 @gameMode              ; "1-PLAYER GAME OVER" after the last life
+GM_SYLVIA_SCENE = 5 @gameMode           ; after floors 2 and 4: "SAVE SYLVIA FROM MR.X", "HELP ME THOMAS!"
+GM_ENDING = 6 @gameMode                 ; after floor 5: CONGRATULATIONS texts, then the next loop (defeatCount+1)
+endenum
+
+enum ; ppuJob: index into PpuJobLo/Hi (PPU string records written at the next NMI); 0-4 = ppuBuffer
+PPUJOB_SPR_PAL_2_3 = $05 @ppuJob        ; sprite palettes 2-3
+PPUJOB_FLOOR_ATTRS = $06 @ppuJob        ; floor screen: attributes, HUD frame and labels, ceiling beam (both nametables)
+PPUJOB_FLOOR_SCENERY = $07              ; + variant (floor 1: +0, floors 3/5: +1, floors 2/4: +2): ceiling brackets; +0 also the bottom rows
+PPUJOB_STAIRS = $0A                     ; + walking direction (floorGoesRight): diagonal of 3-tile rows = the stairs at the floor end
+PPUJOB_PALETTE = $0C @ppuJob            ; background + sprite palettes 0-1
+PPUJOB_TIME_OVER = $0D @ppuJob          ; "TIME OVER"
+PPUJOB_PLAYER_FLOOR = $0E                ; "?PLAYER ?FLOOR" banner (JobPlayerFloor)
+PPUJOB_READY = $0F                      ; "READY"
+PPUJOB_CLEAR_TEXT = $10 @ppuJob         ; clears the TIME OVER / READY lines
+PPUJOB_SYLVIA_ATTRS = $11 @ppuJob       ; Sylvia scene: attributes and its texts
+PPUJOB_HELP_ME = $12 @ppuJob            ; "HELP ME" / "THOMAS"
+PPUJOB_SYLVIA = $13 @ppuJob             ; "SYLVIA"
+PPUJOB_HELP_ME_CLEAR = $14 @ppuJob      ; clears "HELP ME" / "THOMAS" (blinking)
+PPUJOB_SPR_PAL_0 = $15 @ppuJob
+PPUJOB_SPR_PAL_3 = $16 @ppuJob
+PPUJOB_TITLE_ATTRS = $18 @ppuJob        ; title screen: attributes and the logo rows
+PPUJOB_PALETTE_ALL = $19 @ppuJob        ; all 32 palette bytes
+PPUJOB_SPR_PAL_2 = $1A @ppuJob
+PPUJOB_ERASE_PLAYER = $1B @ppuJob       ; blanks the player's background-tile column when he dies
+PPUJOB_BOSS_PAL = $1C                   ; + floor: $1C-$20, sprite palette 2/3 of the floor's boss (floors 1 and 3: empty ppuBuffer)
+PPUJOB_CONGRATULATIONS = $21 @ppuJob    ; ending: "CONGRATULATIONS" / "THOMAS AND SYLVIA" + picture
+PPUJOB_ENDING_TEXT = $22 @ppuJob        ; ending: "BUT THEIR HAPPINESS" / "DOES NOT CONTINUE LONG"
+PPUJOB_FLOOR_ROWS = $23 @ppuJob         ; floor rows 22-29 of both nametables
+PPUJOB_PLAYER = $25                     ; $25-$4E: player body frames, drawn as background tiles at the screen centre
+endenum
+use 8673 PPUJOB_PLAYER_FLOOR
+use 8B1D PPUJOB_STAIRS
+use A96B PPUJOB_BOSS_PAL
+use 89C3 PPUJOB_HELP_ME
+use 89C9 PPUJOB_HELP_ME_CLEAR
+use 8DA5 PPUJOB_SPR_PAL_2
+use 8547 PPUJOB_FLOOR_SCENERY
+
+; ---- sound requests (one bit each; UpdateSound clears the queues every frame)
+MUSIC_BGM = $01 @musicQueue          ; floor music: songs 9-18 in turn (Mesen: GM_FLOOR_START)
+MUSIC_HURRY = $02 @musicQueue        ; the floor timer reached 3xx
+MUSIC_FLOOR_CLEAR = $04 @musicQueue  ; Mesen: GM_FLOOR_CLEAR
+MUSIC_GAME_START = $08 @musicQueue   ; once per game (Mesen: GM_FLOOR_START)
+MUSIC_GAME_OVER = $10 @musicQueue    ; the last life was lost, just before GM_GAME_OVER (Mesen)
+MUSIC_ENDING = $20 @musicQueue       ; ModeScripts of GM_ENDING (Mesen: mode 6)
+MUSIC_PAUSE = $40 @musicQueue        ; pause jingle, then pausedSong goes on (Mesen: GM_PLAY)
+MUSIC_UNPAUSE = $80 @musicQueue      ; START pressed again during the pause (Mesen)
+use 88D8 MUSIC_UNPAUSE
+SFX2_EXTRA_LIFE = $01 @sq2SfxQueue   ; CheckExtraLife
+SFX2_TALLY = $02 @sq2SfxQueue        ; bonus tally tick (Mesen)
+SFX2_STOP_MUSIC = $04 @sq2SfxQueue   ; stops the music: floor exit, player killed (Mesen)
+SFX1_PUFF = $01 @sq1SfxQueue         ; floor 2/4 objects: SpawnEffect puffs and most hits
+SFX1_POT_BREAK = $02 @sq1SfxQueue   ; the pot hits the floor
+SFX1_SMALL_HIT = $04 @sq1SfxQueue   ; OBJ_FLYER or OBJ_SNAKE hit
+SFXN_HIT = $01 @noiseSfxQueue       ; a hit lands (enemy, player, boss 5 block; Mesen)
+SFXN_SWING = $02 @noiseSfxQueue     ; last step of a boss attack (Mesen: the floor 1 boss swinging his stick)
+SFXN_THROW = $04 @noiseSfxQueue     ; knife or boomerang thrown
+SFXN_STEP = $08 @noiseSfxQueue      ; footstep while the player walks by itself (GM_FLOOR_START in Mesen, GM_FLOOR_CLEAR)
+; dmcSfxQueue requests (shouts), checked in Mesen
+DMC_JUMP_KICK = $01 @dmcSfxQueue     ; sample 1
+DMC_KICK = $02 @dmcSfxQueue          ; sample 2, standing or crouching kick
+DMC_PLAYER_HIT = $04 @dmcSfxQueue    ; sample 3
+DMC_DEFEAT = $08 @dmcSfxQueue        ; sample 4: the player is killed, or the boss is beaten
+DMC_SEQ_A = $10 @dmcSfxQueue         ; sequence of samples 5-9: Sylvia scene, bosses of floors 1, 2, 5
+DMC_PUNCH = $20 @dmcSfxQueue         ; sample 10
+DMC_SEQ_C = $40 @dmcSfxQueue         ; boss of floor 3
+DMC_SEQ_D = $80 @dmcSfxQueue         ; boss of floor 4
+use A5A3 DMC_KICK
+use A5AE DMC_PUNCH
+use A842 DMC_PLAYER_HIT
+use C29C DMC_PLAYER_HIT
+use C4B0 DMC_DEFEAT
+use C4F9 DMC_DEFEAT
+use 8974 DMC_SEQ_A
+data BDA6 DMC_SEQ_A, DMC_SEQ_A, DMC_SEQ_C, DMC_SEQ_D, DMC_SEQ_A
+
+; ---- playerAction bits
+PA_RIGHT = $01       ; facing right (set by BUTTON_RIGHT on playerInput)
+PA_CROUCH = $02 @playerAction
+PA_JUMP = $04 @playerAction
+PA_HIT = $08 @playerAction         ; hit by an enemy: PlayerHitRecover
+PA_KICK = $10 @playerAction        ; BUTTON_B >> 2 (B kicks; confirmed by the user)
+PA_PUNCH = $20 @playerAction       ; BUTTON_A >> 2 (A punches)
+; attackKind (PlayerAttackBox): punch 0 / kick +1, standing 0 / crouching +2 / jumping 4
+ATTACK_KICK = 1
+ATTACK_CROUCH = 2
+ATTACK_JUMP = 4
+ATTACK_CROUCH_PUNCH = ATTACK_CROUCH ; the only attack that damages the floor 4 boss
+ATTACK_JUMP_KICK = ATTACK_JUMP | ATTACK_KICK
+use C664 CAAD PA_CROUCH
+use C66C CAB8 PA_JUMP
+use C674 PA_KICK
+use C668 ATTACK_CROUCH
+use C670 CABC D0E6 ATTACK_JUMP
+use C279 ATTACK_CROUCH_PUNCH
+use C57E ATTACK_JUMP_KICK
+use A47F PA_HIT
+use A4BD A4BF BUTTON_RIGHT|BUTTON_LEFT
+use A4DB A551 A56B BUTTON_A|BUTTON_B
+use A4E6 BUTTON_UP
+use A508 PA_RIGHT
+use A50A A5A7 PA_JUMP
+use A523 <~PA_CROUCH
+use A529 BUTTON_DOWN
+use A534 PA_CROUCH
+use A559 PA_PUNCH|PA_KICK
+use A595 (BUTTON_A|BUTTON_B)>>2
+use A599 A59F PA_KICK
+use A68A <~PA_RIGHT
+use A831 A914 PA_CROUCH|PA_JUMP|PA_HIT
+use A85B PA_HIT
+
+; ---- floors (floor, playerFloor): 0-4 = floors 1-5
+FLOOR_1 = 0
+FLOOR_2 = 1
+FLOOR_3 = 2
+FLOOR_4 = 3 @floor  ; flyers (DrawFloor4Sprites)
+FLOOR_5 = 4 @floor  ; boss 5 and its palette changes
+FLOOR_COUNT = 5 @floor
+
+enum ; objType: index into ObjectHandlers (checked in Mesen for 0-7, 9, $0A, $0C)
+OBJ_GRIPPER = $00 @objType
+OBJ_SMALL = $01 @objType        ; small enemy (Tom Tom)
+OBJ_KNIFE_THROWER = $02 @objType
+OBJ_BOSS1 = $03 @objType        ; boss type = floor + OBJ_BOSS1
+OBJ_BOSS2 = $04 @objType
+OBJ_BOSS3 = $05 @objType
+OBJ_BOSS4 = $06 @objType
+OBJ_BOSS5 = $07 @objType
+OBJ_BOSS4_DOUBLE = $08 @objType           ; double of the floor 4 boss (Boss4TryDouble; Mesen: looks like the boss)
+OBJ_PLAYER = $09 @objType
+OBJ_FLYER = $0A @objType        ; floor 4
+OBJ_MISSILE_BACK = $0B @objType  ; a boss-4 missile flying back after reaching its target (code only)
+OBJ_BURST = $0C @objType         ; floor 2: a ball drops and bursts into 3 fragments (Mesen)
+OBJ_DRAGON_BALL = $0D @objType   ; floor 2: a ball drops to the floor and becomes OBJ_DRAGON (Mesen)
+OBJ_DRAGON = $0E @objType        ; floor 2: big white creature, has health (Mesen screenshot)
+OBJ_POT = $0F @objType           ; floor 2: a pot drops, breaks and becomes OBJ_SNAKE (Mesen)
+OBJ_SNAKE = $10 @objType         ; green snake crawling on the floor (Mesen screenshot); also from boss-4 missiles
+OBJ_BOSS4_MISSILE = $11 @objType           ; missile of the floor 4 boss (Boss4Cast; Mesen)
+OBJ_SYLVIA = $12 @objType          ; Sylvia in the floor-clear scene (SpawnSylvia; sheet type_12)
+endenum
+
+; player frame lists: ppuJob numbers
+data 9B07 PPUJOB_PLAYER+$00, PPUJOB_PLAYER+$01, PPUJOB_PLAYER+$02, PPUJOB_PLAYER+$03, PPUJOB_PLAYER+$04, PPUJOB_PLAYER+$05, PPUJOB_PLAYER+$0A, PPUJOB_PLAYER+$0B, PPUJOB_PLAYER+$04, PPUJOB_PLAYER+$05, PPUJOB_PLAYER+$06, PPUJOB_PLAYER+$07, PPUJOB_PLAYER+$08, PPUJOB_PLAYER+$09, PPUJOB_PLAYER+$06, PPUJOB_PLAYER+$07, PPUJOB_PLAYER+$10, PPUJOB_PLAYER+$11, PPUJOB_PLAYER+$0E, PPUJOB_PLAYER+$0F, PPUJOB_PLAYER+$10, PPUJOB_PLAYER+$11, PPUJOB_PLAYER+$0C, PPUJOB_PLAYER+$0D, PPUJOB_PLAYER+$12, PPUJOB_PLAYER+$13, PPUJOB_PLAYER+$0C, PPUJOB_PLAYER+$0D, PPUJOB_PLAYER+$14, PPUJOB_PLAYER+$15, PPUJOB_PLAYER+$18, PPUJOB_PLAYER+$19, PPUJOB_PLAYER+$1A, PPUJOB_PLAYER+$1B, PPUJOB_PLAYER+$1C, PPUJOB_PLAYER+$1D, PPUJOB_PLAYER+$20, PPUJOB_PLAYER+$21, PPUJOB_PLAYER+$1E, PPUJOB_PLAYER+$1F, PPUJOB_PLAYER+$1C, PPUJOB_PLAYER+$1D, PPUJOB_PLAYER+$1A, PPUJOB_PLAYER+$1B, PPUJOB_PLAYER+$18, PPUJOB_PLAYER+$19, PPUJOB_PLAYER+$14, PPUJOB_PLAYER+$15, PPUJOB_PLAYER+$22, PPUJOB_PLAYER+$23, PPUJOB_PLAYER+$24, PPUJOB_PLAYER+$25, PPUJOB_PLAYER+$26, PPUJOB_PLAYER+$27, PPUJOB_PLAYER+$28, PPUJOB_PLAYER+$29
+use C2FD OBJ_DRAGON
+use C306 OBJ_POT
+use C30F OBJ_BOSS4_MISSILE
+
+
+; bossPhase values (slot 5)
+BOSS_APPROACH = 0 @bossPhase        ; walk to the player (BossApproach)
+BOSS_BACK_OFF = 1 @bossPhase        ; walk away (BossBackOff)
+BOSS_ATTACK = 2 @bossPhase          ; 2-4: attack kind from ChooseBossAttack
+BOSS5_JUMP = 5 @bossPhase           ; floor 5: jump over a low attack
+BOSS5_BLOCK = 6 @bossPhase          ; floor 5: blocks the player's attack
+BOSS5_KNOCKED = 7 @bossPhase        ; floor 5: knocked back after a hit
+; boss4Trick values
+B4T_HIT = 1 @boss4Trick             ; set by the hit check (no damage)
+B4T_SPARK = 2 @boss4Trick           ; a sprite falls off the boss
+B4T_VANISH = 3 @boss4Trick
+B4T_APPEAR = 4 @boss4Trick
+B4T_POSE = 5 @boss4Trick
+B4T_DOUBLE = 7 @boss4Trick          ; 7-9: the double (OBJ_BOSS4_DOUBLE)
+B4T_SWAP = 8 @boss4Trick
+B4T_DOUBLE_END = 9 @boss4Trick
+; poses whose role is clear from the code (metasprite index per objType)
+BOSS5_POSE_GUARD = $04              ; Boss5Block
+BOSS5_POSE_JUMP = $12               ; Boss5JumpPhase
+BOSS5_POSE_JUMP_KICK = $13          ; Boss5JumpPhase, rngState+3 >= $CD
+BOSS5_POSE_CROUCH = $14             ; Boss5StartJump
+BOSS5_POSE_KNOCKED = $15            ; Boss5Handler, hit
+GRIPPER_POSE_GRAB = $05             ; holding the player
+GRIPPER_POSE_GRAB_2 = $07           ; a second gripper holding on the same side, arms raised behind the first (Mesen)
+SMALL_POSE_HOP_A = $09              ; small enemy hopping onto the player (SmallEnemyContact)
+SMALL_POSE_HOP_B = $0A
+SMALL_POSE_HOP_C = $0B
+KT_POSE_WALK = $00                  ; knife thrower: poses 0-1 walk (docs/metasprites/type_02.png)
+KT_POSE_READY = $02                 ; standing after a throw; poses below KT_POSE_HIGH_WINDUP may turn
+KT_POSE_HIGH_WINDUP = $03           ; arm raised: high throw
+KT_POSE_HIGH_THROW = $04            ; the knife leaves at this pose
+KT_POSE_LOW_WINDUP = $05            ; crouching: low throw
+KT_POSE_LOW_THROW = $06
+GRIPPER_POSE_SHAKEN = $04           ; shaken off by the player (ShakeOffGrabbers)
+GRIPPER_POSE_DOWN = $09             ; lying down: drawn by DrawGripperDown
+BOSS2_POSE_HOLD = $02               ; boomerang raised (type_04.png)
+BOSS4_POSE_CAST = $02               ; hand forward (type_06.png): double appears / swaps
+BOSS4_POSE_TRICK = $05              ; hunched, body parts missing (Boss4Trick)
+use BE29 BF3E KT_POSE_WALK
+use BF06 BF3A KT_POSE_READY
+use BE4C KT_POSE_HIGH_WINDUP
+use BE86 KT_POSE_HIGH_THROW
+use BE8A KT_POSE_LOW_THROW
+data BB86 KT_POSE_HIGH_WINDUP, KT_POSE_HIGH_THROW, KT_POSE_LOW_WINDUP, KT_POSE_LOW_THROW
+use A61C GRIPPER_POSE_SHAKEN
+use B2DA GRIPPER_POSE_DOWN
+use D0A1 BOSS2_POSE_HOLD
+use D219 BOSS4_POSE_CAST
+use D893 BOSS4_POSE_TRICK
+use D3E5 BOSS5_POSE_GUARD
+use D463 BOSS5_POSE_JUMP
+use D45A BOSS5_POSE_JUMP_KICK
+use D3D9 BOSS5_POSE_CROUCH
+use D2F6 BOSS5_POSE_KNOCKED
+use AE40 GRIPPER_POSE_GRAB
+use AE6E GRIPPER_POSE_GRAB_2
+use CA27 SMALL_POSE_HOP_A
+use CA3D SMALL_POSE_HOP_A
+use CA47 SMALL_POSE_HOP_B
+use CA14 SMALL_POSE_HOP_C
+use CA5D SMALL_POSE_HOP_C
+
+; ---- positions (objWorldXHi:objWorldX runs $0070-$0690 on every floor; objY $87 = standing on the ground)
+GROUND_Y = $87                  ; objY of a character standing on the floor (also JumpY[0])
+HIDDEN_Y = $A8                  ; objY of a hidden floor-2 object, below the floor line
+FLOOR_X_MIN = $70               ; left end of a floor: objWorldX with objWorldXHi = 0
+FLOOR_X_MAX = $90               ; right end of a floor: objWorldX with objWorldXHi = FLOOR_X_MAX_HI
+FLOOR_X_MAX_HI = $06
+HEALTH_FULL = $30               ; playerHealth / bossHealth at the start of a floor
+use 855F AA9E CA6F GROUND_Y
+use B1C0 B810 HIDDEN_Y
+use CFAC D427 D584 FLOOR_X_MIN
+use D052 D2D6 D2DE D57C D95A FLOOR_X_MAX
+use D04E D2D0 D2DA D576 D954 FLOOR_X_MAX_HI
+use 85C4 C7BE HEALTH_FULL
+BOSS_WAIT_PAGE_END = 5          ; BossWalkToPlayer: an approaching boss waits on pages BossWaitPage..4
+use D552 BOSS_WAIT_PAGE_END
+use D548 D56A OBJ_BOSS4
+use C893 OBJ_BOSS1
+use C897 C8DE OBJ_BOSS3
+use CD5D OBJ_BOSS5
+use C372 C38E OBJ_FLYER
+use C38A OBJ_SNAKE
+use C398 OBJ_BURST
+use C39C OBJ_DRAGON_BALL
+use C3A6 C414 OBJ_POT
+use C3B0 C418 OBJ_BOSS4_MISSILE
+DAMAGE_GAME_A = OBJ_SYLVIA      ; EnemyDamage: game A half starts after one entry per objType 0..OBJ_SYLVIA-1
+use C3BE C92B CDA9 DAMAGE_GAME_A
+SHOT_DAMAGE_B = $12             ; hitDamage of a knife or boomerang in game B
+SHOT_DAMAGE_A = $0C             ; ... in game A
+use C97A SHOT_DAMAGE_B
+use C97E SHOT_DAMAGE_A
+
+; ---- floor 4 flyers (flyerMode = FlyerStateHandlers index)
+FLYER_WAIT = 0 @flyerMode          ; FlyerStateWait: until objActTimer runs out
+FLYER_STRAIGHT = 1 @flyerMode      ; small wave only
+FLYER_DIVE = 2 @flyerMode          ; dive at FlyerWaveA speed
+FLYER_DIVE_LONG = 3 @flyerMode     ; dive at FlyerWaveB speed, longer
+FLYER_TURN_A = 4 @flyerMode        ; first half of a turn (FlyerStateDec)
+FLYER_TURN_B = 5 @flyerMode        ; second half (FlyerStateInc)
+FLYER_HOVER = 6 @flyerMode         ; FlyerStateHover
+FLYER_Y_TOP = $6C                  ; MoveFlyer: objY kept in FLYER_Y_TOP..FLYER_Y_BOTTOM-1
+FLYER_Y_BOTTOM = $B4
+FLYER_Y_LOW = $98                  ; FlyerSetMode: at or below this the dive starts upwards
+FLYER_WAVE_PERIOD = $18            ; flyerWavePhase steps per small wave half
+FLYER_TURN_STEP = $0A              ; flyerState step per frame of a turn
+use AF47 FLYER_Y_TOP
+use AF4C FLYER_Y_BOTTOM
+use AEC5 FLYER_Y_LOW
+use AEDC FLYER_WAVE_PERIOD
+use AFAE AFBF FLYER_TURN_STEP
+use AEF8 FLYER_DIVE
+use AF5D FLYER_TURN_A
+use AEAC FLYER_DIVE
+use AFC6 FLYER_TURN_B
+
+; ---- objState bits (0 = free slot)
+OBJST_ACTIVE = $01              ; slot in use
+OBJST_FACING = $02              ; spawn facing (objFacing << 1); the knife thrower turns by it
+OBJST_GRABBING = $04            ; a gripper holds the player: its handler is skipped, it cannot be hit
+OBJST_HIDDEN = $08              ; not drawn (HideObject / ShowObject, boss 4 vanish)
+OBJST_ALT = $10                 ; alternative behaviour (hop, SmallEnemyContact) picked at spawn by EnemyAltChance (Mesen: small enemies on floors 4-5)
+use AA9A OBJST_ACTIVE
+use BE6B BF0D C378 OBJST_FACING
+use ACFF C239 AE44 OBJST_GRABBING
+use B1C6 C233 D8FE OBJST_HIDDEN
+use B19E D976 <~OBJST_HIDDEN
+use C9CF OBJST_ALT
+use AB16 OBJST_ALT|OBJST_ACTIVE
+use D1E6 OBJST_HIDDEN|OBJST_ACTIVE
+use AC92 OBJST_FACING|OBJST_ACTIVE
+
+; ---- song data (see README "Sound"): SQ2/TRI bytes are NL_n (length index) or a note, SQ1/NOISE bytes pack both
+; (NOTE_x|NLP_n; a packed byte without a note is silence, NOISE only tests note != 0). Names = square pitch;
+; the triangle sounds an octave lower. Channel starts come from the song headers; disasm.py checks every value.
+SONG_END = $00                  ; ends SQ2 (the song loops or stops) and TRI
+NOTE_REST = $02
+NOTE_G3 = $04
+NOTE_GS3 = $06
+NOTE_A3 = $08
+NOTE_C4 = $0A
+NOTE_D4 = $0C
+NOTE_E4 = $0E
+NOTE_F4 = $10
+NOTE_FS4 = $12
+NOTE_G4 = $14
+NOTE_GS4 = $16
+NOTE_A4 = $18
+NOTE_C5 = $1A
+NOTE_D5 = $1C
+NOTE_E5 = $1E
+NOTE_F5 = $20
+NOTE_FS5 = $22
+NOTE_G5 = $24
+NOTE_GS5 = $26
+NOTE_A5 = $28
+NOTE_AS5 = $2A
+NOTE_C6 = $2C
+NOTE_D6 = $2E
+NOTE_E6 = $30
+NOTE_AS3 = $32
+NOTE_FS3 = $34
+NOTE_B3 = $36
+NOTE_B2 = $38
+NOTE_GS2 = $3A
+NOTE_CS4 = $3C
+NOTE_DS4 = $3E
+NOTE_AS4 = $40
+NOTE_B4 = $42
+NOTE_DS5 = $44
+NOTE_B5 = $46
+NOTE_A1 = $48
+NOTE_F2 = $4A
+NOTE_G2 = $4C
+NOTE_AS2 = $4E
+NOTE_C3 = $50
+NOTE_D3 = $52
+NOTE_DS3 = $54
+NOTE_F3 = $56
+NL_0 = $80                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+0] frames
+NL_1 = $81                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+1] frames
+NL_2 = $82                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+2] frames
+NL_3 = $83                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+3] frames
+NL_4 = $84                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+4] frames
+NL_5 = $85                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+5] frames
+NL_6 = $86                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+6] frames
+NL_7 = $87                     ; SQ2/TRI: next notes last NoteLengths[noteLenOffset+7] frames
+NL_7FF = $FF                   ; NL_7 with the ignored bits 3-6 set (only at the end of the ending song)
+NLP_0 = $00                    ; SQ1/NOISE: length index 0 in bits 0, 7, 6
+NLP_1 = $40                    ; SQ1/NOISE: length index 1 in bits 0, 7, 6
+NLP_2 = $80                    ; SQ1/NOISE: length index 2 in bits 0, 7, 6
+NLP_3 = $C0                    ; SQ1/NOISE: length index 3 in bits 0, 7, 6
+NLP_4 = $01                    ; SQ1/NOISE: length index 4 in bits 0, 7, 6
+NLP_5 = $41                    ; SQ1/NOISE: length index 5 in bits 0, 7, 6
+NLP_6 = $81                    ; SQ1/NOISE: length index 6 in bits 0, 7, 6
+NLP_7 = $C1                    ; SQ1/NOISE: length index 7 in bits 0, 7, 6
+; BgmA SQ2
+data FD30 NL_1, NOTE_G2, NL_0, NOTE_G2, NOTE_F2, NL_1, NOTE_G2, NL_0
+data FD38 NOTE_G2, NOTE_F2, NL_1, NOTE_G2, NL_0, NOTE_G2, NOTE_F2, NOTE_G2
+data FD40 NOTE_AS2, NOTE_G2, NOTE_F2, SONG_END
+; BgmB SQ2
+data FD44 NL_1, NOTE_C3, NL_0, NOTE_C3, NOTE_AS2, NL_1, NOTE_C3, NL_0
+data FD4C NOTE_C3, NOTE_AS2, NL_1, NOTE_C3, NL_0, NOTE_C3, NOTE_AS2, NOTE_C3
+data FD54 NOTE_DS3, NOTE_C3, NOTE_AS2, SONG_END
+; BgmC SQ2
+data FD58 NL_1, NOTE_D3, NL_0, NOTE_D3, NOTE_C3, NL_1, NOTE_D3, NL_0
+data FD60 NOTE_D3, NOTE_C3, NL_1, NOTE_D3, NL_0, NOTE_D3, NOTE_C3, NOTE_D3
+data FD68 NOTE_F3, NOTE_D3, NOTE_C3, SONG_END
+; BGM NOISE
+data FD6C NOTE_F4|NLP_1, NOTE_F4|NLP_0, NOTE_F4|NLP_0, NOTE_F4|NLP_1, NOTE_F4|NLP_0, NOTE_F4|NLP_0, NOTE_F4|NLP_1, NOTE_F4|NLP_0
+data FD74 NOTE_F4|NLP_0, NOTE_F4|NLP_1, NOTE_F4|NLP_0, NOTE_F4|NLP_0
+; FloorClear SQ2
+data FD78 NL_1, NOTE_AS3, NOTE_B3, NL_2, NOTE_G4, NOTE_F4, NOTE_E4, NL_1
+data FD80 NOTE_D4, NOTE_C4, NL_2, NOTE_AS3, NL_1, NOTE_AS3, NOTE_B3, NL_2
+data FD88 NOTE_C4, NL_1, NOTE_B3, NOTE_G4, NOTE_C4, NOTE_A4, NOTE_D4, NOTE_AS4
+data FD90 NOTE_DS4, NOTE_B4, NL_2, NOTE_B4, SONG_END
+; FloorClear TRI
+data FD95 NL_2, NOTE_G3, NOTE_B3, NOTE_D4, NOTE_E4, NOTE_F4, NOTE_E4, NOTE_D4
+data FD9D NOTE_B3, NL_1, NOTE_G3, NOTE_G4, NOTE_A3, NOTE_A4, NOTE_AS3, NOTE_AS4
+data FDA5 NOTE_B3, NOTE_B4, NOTE_G3, NOTE_REST
+; GameStart SQ2
+data FDA9 NL_1, NOTE_G5, NOTE_F5, NOTE_D5, NOTE_C5, NOTE_AS4, NOTE_G4, NL_5
+data FDB1 NOTE_AS4, NL_5, NOTE_G4, NL_1, NOTE_G5, NOTE_F5, NOTE_D5, NOTE_C5
+data FDB9 NOTE_AS4, NOTE_G4, NL_5, NOTE_AS4, NL_5, NOTE_G4, NL_1, NOTE_G5
+data FDC1 NOTE_F5, NOTE_D5, NOTE_C5, NOTE_AS4, NOTE_G4, NL_5, NOTE_AS4, NL_5
+data FDC9 NOTE_G4, NL_2, NOTE_F4, NL_1, NOTE_G4, SONG_END
+; GameStart SQ1
+data FDCF NOTE_D5|NLP_1, NOTE_C5|NLP_1, NOTE_A4|NLP_1, NOTE_G4|NLP_1, NOTE_F4|NLP_1, NOTE_D4|NLP_1, NOTE_F4|NLP_5, NOTE_D4|NLP_5
+data FDD7 NOTE_D5|NLP_1, NOTE_C5|NLP_1, NOTE_A4|NLP_1, NOTE_G4|NLP_1, NOTE_F4|NLP_1, NOTE_D4|NLP_1, NOTE_F4|NLP_5, NOTE_D4|NLP_5
+data FDDF NOTE_D5|NLP_1, NOTE_C5|NLP_1, NOTE_A4|NLP_1, NOTE_G4|NLP_1, NOTE_F4|NLP_1, NOTE_D4|NLP_1, NOTE_F4|NLP_5, NOTE_D4|NLP_5
+data FDE7 NOTE_C4|NLP_2, NOTE_D4|NLP_1
+; GameStart TRI
+data FDE9 NL_2, NOTE_G3, NL_1, NOTE_G3, NL_2, NOTE_AS3, NL_1, NOTE_AS3
+data FDF1 NL_2, NOTE_C4, NL_1, NOTE_C4, NOTE_D4, NOTE_F4, NOTE_G4, NL_2
+data FDF9 NOTE_G3, NL_1, NOTE_G3, NL_2, NOTE_AS3, NL_1, NOTE_AS3, NL_2
+data FE01 NOTE_C4, NL_1, NOTE_C4, NOTE_D4, NOTE_F4, NOTE_G4, NL_2, NOTE_G3
+data FE09 NL_1, NOTE_G3, NL_2, NOTE_AS3, NL_1, NOTE_AS3, NL_2, NOTE_C4
+data FE11 NL_1, NOTE_C4, NL_2, NOTE_D4, NL_1, NOTE_D4, NL_2, NOTE_G4
+data FE19 NL_1, NOTE_G4
+; GameOver SQ2
+data FE1B NL_1, NOTE_C5, NOTE_D5, NL_2, NOTE_F5, NL_1, NOTE_D5, NOTE_C5
+data FE23 NL_2, NOTE_A4, NOTE_C5, NOTE_A4, NOTE_G4, NOTE_F4, NL_1, NOTE_G4
+data FE2B NOTE_F4, NL_2, NOTE_D4, NL_1, NOTE_C4, NOTE_CS4, NL_2, NOTE_D4
+data FE33 SONG_END
+; GameOver SQ1
+data FE34 NOTE_G4|NLP_1, NOTE_A4|NLP_1, NOTE_C5|NLP_2, NOTE_A4|NLP_1, NOTE_G4|NLP_1, NOTE_E4|NLP_2, NOTE_G4|NLP_2, NOTE_E4|NLP_2
+data FE3C NOTE_D4|NLP_2, NOTE_C4|NLP_2, NOTE_D4|NLP_1, NOTE_C4|NLP_1, NOTE_A3|NLP_2, NOTE_G3|NLP_1, NOTE_GS3|NLP_1, NOTE_A3|NLP_2
+; GameOver TRI
+data FE44 NL_1, NOTE_D4, NOTE_D4, NOTE_B3, NOTE_B3, NOTE_C4, NOTE_C4, NOTE_CS4
+data FE4C NOTE_CS4, NOTE_D4, NOTE_D4, NOTE_B3, NOTE_B3, NOTE_C4, NOTE_C4, NOTE_CS4
+data FE54 NOTE_CS4, NOTE_D4, NOTE_D4, NOTE_B3, NOTE_B3, NOTE_G4, NOTE_GS4, NOTE_A4
+data FE5C NOTE_REST
+; Hurry SQ2
+data FE5D NL_1, NOTE_AS4, NOTE_AS4, NOTE_AS4, NOTE_REST, NL_2, NOTE_REST, SONG_END
+; Pause SQ2
+data FE65 NL_0, NOTE_G4, NOTE_C5, NOTE_D5, NOTE_F5, SONG_END
+; Unpause SQ2
+data FE6B NL_0, NOTE_F5, NOTE_D5, NOTE_C5, NOTE_G4, SONG_END
+; Ending SQ2
+data FE71 NL_0, NOTE_C3, NOTE_G3, NOTE_C4, NOTE_E4, NOTE_G4, NOTE_E4, NOTE_C5
+data FE79 NOTE_G4, NOTE_E4, NOTE_G3, NOTE_C4, NOTE_E4, NOTE_B2, NOTE_FS3, NOTE_A3
+data FE81 NOTE_DS4, NOTE_FS4, NOTE_DS4, NOTE_B4, NOTE_FS4, NOTE_DS4, NOTE_FS3, NOTE_B3
+data FE89 NOTE_DS4, NOTE_C3, NOTE_G3, NOTE_C4, NOTE_E4, NOTE_G4, NOTE_E4, NOTE_C5
+data FE91 NOTE_G4, NOTE_E4, NOTE_G3, NOTE_C4, NOTE_E4, NOTE_C3, NOTE_G3, NOTE_C4
+data FE99 NOTE_E4, NOTE_G4, NOTE_E4, NOTE_C5, NOTE_G4, NOTE_E4, NOTE_G3, NOTE_C4
+data FEA1 NOTE_E4, NOTE_GS2, NOTE_DS3, NOTE_GS3, NOTE_C4, NOTE_DS4, NOTE_C4, NOTE_GS4
+data FEA9 NOTE_DS4, NOTE_C4, NOTE_DS3, NOTE_GS3, NOTE_C4, NOTE_AS2, NOTE_F3, NOTE_AS3
+data FEB1 NOTE_D4, NOTE_F4, NOTE_D4, NOTE_AS4, NOTE_F4, NOTE_D4, NOTE_F3, NOTE_AS3
+data FEB9 NOTE_D4, NOTE_C3, NOTE_G3, NOTE_C4, NOTE_E4, NOTE_G4, NOTE_E4, NOTE_C5
+data FEC1 NOTE_G4, NOTE_E4, NOTE_G3, NOTE_C4, NOTE_E4, NL_1, NOTE_C4, NOTE_E4
+data FEC9 NOTE_G4, NOTE_E4, NOTE_G4, NL_2, NOTE_C5, SONG_END
+; Ending SQ1
+data FECF NOTE_G5|NLP_6, NOTE_FS5|NLP_4, NOTE_A5|NLP_4, NOTE_G5|NLP_6, NOTE_E5|NLP_6, NOTE_C6|NLP_6, NOTE_AS5|NLP_5, NOTE_GS5|NLP_1
+data FED7 NOTE_AS5|NLP_1, NOTE_C6|NLP_7
+; Ending TRI
+data FED9 NL_5, NOTE_E6, NL_2, NOTE_C6, NL_4, NOTE_B5, NL_3, NOTE_FS4
+data FEE1 NOTE_B5, NOTE_DS5, NL_5, NOTE_E6, NL_2, NOTE_G5, NL_4, NOTE_C6
+data FEE9 NOTE_G5, NOTE_GS5, NL_3, NOTE_DS5, NOTE_F5, NOTE_G5, NOTE_GS5, NOTE_AS5
+data FEF1 NOTE_C6, NOTE_AS5, NOTE_C6, NOTE_D6, NL_4, NOTE_E6, NL_7, NOTE_REST
+data FEF9 NL_7FF, NL_7FF, NL_7FF, NL_7FF, NL_7FF, NL_7FF, NL_7FF
+; boomerangState values (UpdateBoomerangs)
+BOOM_NONE = 0 @boomerangState
+BOOM_HELD = 1 @boomerangState          ; spawned, still in the boss's hand (objActTimer+5)
+BOOM_OUT = 2 @boomerangState           ; flying away from the boss
+BOOM_ARC = 3 @boomerangState           ; up/down arc (BoomerangArcDY)
+BOOM_BACK = 4 @boomerangState          ; flying back
+BOOM_CAUGHT = 5 @boomerangState        ; back at the boss; cleared when objActTimer+5 runs out
+
+; enemy groups (UpdateBossAndSpawns, docs/spawn_map.md)
+ENEMY_SLOTS = 4                    ; object slots 0-3: grippers, small enemies, knife throwers
+GROUP_SIZE = 4                     ; enemies per group (one less on floors 1-2 in the first round)
+SPAWN_NO_GROUP = $04               ; spawn byte: no group starts at this spawnStep (tested with BIT BitMask04)
+SPAWN_DELAY_SEL = $03              ; spawn byte: != 0 selects SpawnDelays set B
+SPAWN_DELAYS_B = $10               ; spawnDelaySet base of set B
+SPAWN_DELAY_RANDOM = $0C           ; random 0-3 sets of 4 on top
+SPAWN_SIDES_MASK = $07             ; spawn byte bits 3-5 (after >> 3): SpawnSides pattern
+SIDES_ALTERNATE = 2                ; SpawnSides pattern used while the player stands still
+SPAWN_TYPE_BITS = $C0              ; spawn byte: 0 gripper, $40 small enemy, $80/$C0 random
+SPAWN_TYPE_RANDOM = $80
+SPAWN_STEP_LAST = $4A              ; last index read from a SpawnFloorN table
+IDLE_SPAWN_GAP = $38               ; frames between the enemies of a group while the player stands still
+GAME_A_GROUP_WAIT = $30            ; extra groupWait frames in game A
+FLOOR5_THROWER_PAGE = 2            ; floor 5: no knife throwers before this scroll page
+GRIPPER_TURN_COUNT = 3             ; liveEnemies at which grippers turn while the boss is near
+BOSS_WAIT_TIME = $9C               ; bossWaitTimer when the boss comes on screen
+FACING_RIGHT = 1                   ; objFacing / playerAction & PA_RIGHT
+use A987 ENEMY_SLOTS
+use A9E9 GROUP_SIZE
+use A9D1 SPAWN_DELAY_SEL
+use A9D5 SPAWN_DELAYS_B
+use A9DB SPAWN_DELAY_RANDOM
+use A9E5 SPAWN_SIDES_MASK
+use A9F1 FLOOR_3
+use AA04 SIDES_ALTERNATE
+use AA79 AA7D SPAWN_STEP_LAST
+use AA82 SPAWN_TYPE_BITS
+use AA88 SPAWN_TYPE_RANDOM
+use AA86 OBJ_SMALL
+use AAA4 FACING_RIGHT
+use AAB9 IDLE_SPAWN_GAP
+use AAE0 GAME_A_GROUP_WAIT
+use AAEE FLOOR5_THROWER_PAGE
+use A982 GRIPPER_TURN_COUNT
+use A964 BOSS_WAIT_TIME
+use A99A OBJST_FACING
+
+; knife thrower (KnifeThrowerHandler)
+KT_WALK_FRAME_TIME = 7              ; objActTimer between the two walk poses
+KT_POSE_TIME = $0E                  ; objActTimer per throw pose
+KT_STEP_THROWN = $F0                ; knifeThrowStep after the knife left
+KT_STEP_LOW = 2                     ; knifeThrowStep of a low throw (KnifeThrowPoses+2)
+KT_FLOOR5_STOP_PAGE = 3             ; floor 5 with the boss present: a left-facing thrower stops at this page
+KT_TURN_DISTANCE = $50              ; KnifeThrowerKeepRange: objDistance from which it may turn
+KNIFE_FLYING = $01                  ; knifeState: flying left
+KNIFE_FLYING_RIGHT = $11            ; flying right (bit 4 flips the sprite)
+KNIFE_OFFSET_X = 8                  ; knifeX = objX +- KNIFE_OFFSET_X
+KNIFE_LOW_CHANCE_D2 = $66           ; lowThrowChance at difficulty 2
+KNIFE_LOW_CHANCE_D3 = $80           ; ... at difficulty 3
+use BDF1 KT_WALK_FRAME_TIME
+use BED1 KT_POSE_TIME
+use BEC8 KT_STEP_THROWN
+use BE9A KT_POSE_HIGH_THROW
+use BE9E KT_POSE_LOW_THROW
+use BE0A BE0E KT_FLOOR5_STOP_PAGE
+use BE1B FLOOR_X_MAX_HI
+use BEA6 KNIFE_FLYING
+use BEAF KNIFE_FLYING_RIGHT
+use BEB4 KNIFE_OFFSET_X
+use BEAB <-KNIFE_OFFSET_X
+use BF1C BF95 KT_TURN_DISTANCE
+KT_TOO_CLOSE = $0B                  ; KnifeThrowerKeepRange: closer than this it turns away
+KT_THROW_DISTANCE = $4A             ; ... throws only closer than this
+use BF49 KT_TOO_CLOSE
+use BF45 KT_THROW_DISTANCE
+use BDD7 KNIFE_LOW_CHANCE_D2
+use BDDB KNIFE_LOW_CHANCE_D3
+
+; small enemy hop (SmallEnemyContact)
+HOP_DIST_MIN = $2E                  ; objDistance range in which an OBJST_ALT small enemy starts its hop
+HOP_DIST_MAX = $32
+HOP_FLOOR5_PAGE = 3                 ; floor 5: no hop before this objWorldXHi
+HOP_STEP_LOW = $08                  ; hopStep phases: below it pose SMALL_POSE_HOP_C
+HOP_STEP_START = $0E                ; HopYStart
+HOP_STEP_RISE = $18                 ; HopYRise
+HOP_STEP_TOP = $20
+HOP_STEP_FALL = $2A                 ; HopYFall
+HOP_STEP_END = $38                  ; HopYLand below it; the hop ends at it
+HOP_DAMAGE_A = 5                    ; hitDamage of a hop on a crouching player, game A
+HOP_DAMAGE_B = $0A                  ; ... game B
+OBJST_BASE = $0F                    ; objState without OBJST_ALT and the bits above
+use C9C9 HOP_FLOOR5_PAGE
+use C9D6 HOP_DIST_MAX
+use C9DA HOP_DIST_MIN
+use C9FA CA75 OBJST_BASE
+use CA08 CA2F HOP_STEP_START
+use CA10 HOP_STEP_LOW
+use CA23 HOP_STEP_RISE
+use CA39 CA4F HOP_STEP_TOP
+use CA43 CA65 HOP_STEP_FALL
+use CA59 CAE7 HOP_STEP_END
+use CAE2 HOP_DAMAGE_A
+use CADE HOP_DAMAGE_B
+
+; ---- object slots and hit boxes (hits.asm)
+SLOT_BOSS = 5                      ; object slot of the boss (enemies 0-4 below it)
+SLOT_PLAYER = 6                    ; object slot of the player
+HITBOX_2 = 4                       ; offset of the second box (ptr_03+1..ptr_07) for CheckHitBox
+PLAYER_BOX_HALF = 5                ; PlayerBodyBox: objX+6 +- this
+SMALL_BOX_HALF = 4                 ; SmallObjectHitBox: objX +- this
+BOSS_ATTACK_LOW = 3                ; bossPhase: crouching swing of the floor 1/3 boss (BossAttackPoses: pose 8)
+BOSS5_ATTACK_LOW = 4               ; bossPhase: low attack of the floor 5 boss
+BOSS_LOW_BOX_DROP = $10            ; the box top of a low boss attack is this much lower
+SPARK_SLOTS = 3                    ; hit sparks (sparkState)
+SPARK_TIME = 6                     ; timersFast+5,X: frames a hit spark is shown
+SPARK_TILE = $0B                   ; sprite tile of a hit spark
+SPARK_OFFSET_X = 8                 ; a spark appears this much left of a left-facing object
+POPUP_TIME = $0B                   ; popupTimer of a score popup
+POPUP_TIME_BOSS = $50              ; ... for the boss
+PLAYER_X_MIN = $1A                 ; screen limits of the player (objX+6) in PlayerAttackBox; in Mesen objX+6 stays $80-$E3, so they never cut a box
+PLAYER_X_MAX = $E6
+use C3FE C938 C98A CB0E CB7C CDD3 SLOT_PLAYER
+use C471 C54A C5BF SLOT_PLAYER
+use C21A C4A4 C5F4 SLOT_BOSS
+use C0A4 C904 CA9B CD92 C242 C35A HITBOX_2
+use C0AF PLAYER_BOX_HALF
+use C0B4 2*PLAYER_BOX_HALF
+use C0BA PA_RIGHT|PA_CROUCH|PA_JUMP|PA_HIT
+use C0BD PA_JUMP>>1
+use C120 SMALL_BOX_HALF
+use C126 2*SMALL_BOX_HALF
+use C12E OBJ_FLYER
+use C13F C18F C8C2 BOSS_ATTACK_LOW
+use C187 BOSS5_ATTACK_LOW
+use C146 C196 BOSS_LOW_BOX_DROP
+use C1AF C1EF SPARK_SLOTS-1
+use C1BA SPARK_TIME
+use C1D3 SPARK_TILE
+use C2BA <-SPARK_OFFSET_X
+use C200 PA_KICK-1
+use C204 PA_JUMP
+use C287 OBJ_BOSS4_DOUBLE
+use C5F2 POPUP_TIME
+use C5F8 POPUP_TIME_BOSS
+use C6AF C6EA PLAYER_X_MIN
+use C6BD C6F8 PLAYER_X_MAX
+
+; ---- main.asm
+TIMER_COUNT = 20                   ; timersFast and timersSlow (contiguous) have 20 entries each
+GAMESEL_2P = 2                     ; gameSelect bit 1: two players (bit 0 = game B)
+GAMESEL_COUNT = 4                  ; 1P A, 1P B, 2P A, 2P B
+DIFFICULTY_MAX = 3                 ; difficulty = curDefeatCount, at most this
+OAM_LAST = $FC                     ; offset of the last OAM record
+ATTR_SIZE = $40                    ; attribute table bytes
+SCORE_P1_PPU = NAMETABLE0+$64      ; HUD score positions
+SCORE_P2_PPU = NAMETABLE0+$78
+TOP_SCORE_PPU = NAMETABLE0+$6F
+PAUSE_DELAY = $28                  ; pauseDelay: frames before START works again
+use 8323 TIMER_COUNT-1
+use 832D 2*TIMER_COUNT-1
+use 8465 GAMESEL_COUNT-1
+use 848A 8883 GAMESEL_2P
+use 8502 8506 DIFFICULTY_MAX
+use 84F6 8F80 8D0E 8D5E OAM_HIDE_Y
+use 8A17 8A36 8A55 OAM_LAST
+use 8F65 >ATTR_OFFSET
+use 8F6A <ATTR_OFFSET
+use 8F6F ATTR_SIZE
+use 8C22 FLOOR_COUNT
+use 8C35 FLOOR_3
+use 8C39 FLOOR_5
+use 8C40 GM_SYLVIA_SCENE
+use 856D OBJ_PLAYER
+use 8569 OBJ_BOSS1
+use 8616 TILE_BLANK
+use 8654 <SCORE_P1_PPU
+use 8666 <SCORE_P2_PPU
+use 866B >SCORE_P2_PPU
+use 863A <TOP_SCORE_PPU
+use 8635 >TOP_SCORE_PPU
+use 8DD8 BUTTON_A|BUTTON_B
+use 88E8 PAUSE_DELAY
+
+; ---- draw.asm
+use B367 B3D9 B4D3 B599 B610 B909 BA87 SPR_FLIP_H
+use B36B B371 B4D7 B90D B913 BA76 SPR_FLIP_V
+use B389 B3BA B3ED B403 B438 B4AA B51F B54A B5B5 B5D5 TILE_PX
+use B617 B630 B65A B686 B692 B8E4 B92B B95F TILE_PX
+use B3A9 SPR_FLIP_H|SPR_FLIP_V
+use B3C4 B969 4*SPRITE_BYTES
+use B426 B45B B543 BA7D 2*SPRITE_BYTES
+EFFECT_TILE_1 = $DB                ; effect puff tiles, in order (DrawEffects)
+EFFECT_TILE_2 = $DC
+EFFECT_TILE_3 = $F0
+EFFECT_TIME = $12                  ; effectTimer of a new effect
+EFFECT_TIME_2 = $0C                ; below it EFFECT_TILE_2
+EFFECT_TIME_3 = 6                  ; below it EFFECT_TILE_3
+use B8D3 EFFECT_TILE_1
+use B8A7 EFFECT_TILE_2
+use B8B3 EFFECT_TILE_3
+use B8D8 EFFECT_TIME
+use B8A3 EFFECT_TIME_2
+use B8AF EFFECT_TIME_3
+use B2F7 B475 SPR_FLIP_H
+use B363 B3D3 SPR_BEHIND|3
+use B3A1 C86B SPR_BEHIND|1
+use C876 8A9F SPR_BEHIND
+use B2D0 OBJST_HIDDEN
+use B2E4 OBJ_BURST
+use B2E8 OBJ_FLYER
+use B2EC OBJ_MISSILE_BACK
+use B352 OBJ_DRAGON_BALL
+use B356 OBJ_POT
+use B2B5 B2C3 SLOT_PLAYER
+
+; ---- bosses.asm
+BOSS_ATTACKS_MAX = 3               ; bossAttacksLeft on floor 2 (and the most on other floors)
+BOSS_HIT_WINDOW = $10              ; bossHitWindow / bossHitAgain: frames in which a second hit counts
+BOSS4_CAST_TIME = $20              ; boss4CastTimer after a cast
+BOSS4_DOUBLE_TIME = $20            ; sceneTimer while the floor 4 double stays (slow ticks)
+BOSS4_DOUBLE_WAIT = $30            ; bossWaitTimer after each double
+use D088 D1F2 D2EF D4DC D4FE D869 D872 DA07 D42B D375 SLOT_BOSS
+use D539 BOSS_ATTACKS_MAX
+use D5EE BOSS_ATTACK+2
+use D05D D139 D854 BOSS_HIT_WINDOW
+use D18E BOSS4_CAST_TIME
+use D209 BOSS4_DOUBLE_TIME
+use D21F BOSS4_DOUBLE_WAIT
+use D392 PA_CROUCH|PA_JUMP
+use D398 PA_JUMP
+
+; ---- enemies, player, spawns, knives
+OBJ_SLOTS = 7                      ; object slots 0-6 (enemies, boss, player)
+FALL_END_Y = $D8                   ; a knocked-out object is freed when objY reaches this
+KNIFE_RIGHT_BIT = KNIFE_FLYING_RIGHT ^ KNIFE_FLYING ; knifeState bit: flying right
+KNIFE_TILE = $0A                   ; sprite tile of a knife
+WALK_CARRY_TIME = 6                ; walkCarryTimer on each scroll step
+SCROLL_ACTIVE_TIME = $1A           ; scrollActiveTimer on each spawnStep change
+SPAWN_STEP_PX = $18                ; scroll pixels per spawnStep (spawnStepFine)
+use A78C BFE9 AD77 AD96 SLOT_PLAYER
+use A698 B2A7 SLOT_BOSS
+use AC5C ACB3 SLOT_BOSS-1
+use ACCF BFA8 C02A ENEMY_SLOTS-1
+use AD62 OBJ_SLOTS
+use ADC4 FALL_END_Y
+use BFAF C071 KNIFE_RIGHT_BIT
+use C03A KNIFE_TILE
+use BFB3 SPR_FLIP_H
+use BFDE SHOT_DAMAGE_B
+use BFE2 SHOT_DAMAGE_A
+use A48F A516 PA_KICK-1
+use A496 A53F PA_JUMP
+use A8D9 A87F PA_RIGHT|PA_CROUCH
+use A8DD PA_CROUCH
+use A5D2 <~(BUTTON_START|BUTTON_SELECT)
+use A808 WALK_CARRY_TIME
+use A728 SCROLL_ACTIVE_TIME
+use A71F A723 SPAWN_STEP_PX
+use A718 SPAWN_STEP_PX-1
+use DAF5 <~PPUCTRL_INC32
+
+; ---- sound.asm
+APU_CH_SQ2 = SQ2_VOL - SQ1_VOL     ; SetChannelFreq: register offset of a channel
+APU_CH_TRI = TRI_LINEAR - SQ1_VOL
+use F879 APU_CH_SQ2
+use F87D APU_CH_TRI
+use F866 1<<APU_LEN_SHIFT
+use F895 F933 F951 FBFE SWEEP_NONE
+use FC0F FBBE MUSIC_BGM|MUSIC_HURRY
+use FC56 FBF8 FCA2 MUSIC_ENDING
+use FBB8 MUSIC_UNPAUSE
+use FAA3 DMC_SEQ_D
+use FAA7 DMC_SEQ_C
+use FAAB DMC_PUNCH
+
+; ---- HUD (hits.asm)
+PPUREC_HEAD = 3                    ; ppuBuffer record: address hi, lo, length, then the bytes (0 ends the buffer)
+FLOOR_TIME_DIGITS = 4
+FLOOR_TIME_PPU = NAMETABLE0+$DA
+SCORE_DIGITS = 7                   ; score / topScores (two tables: game A, game B)
+SCORE_SHOWN = 6                    ; score+1..+6 are printed (the top digit is never shown)
+EXTRA_LIFE_DIGIT = 5               ; score+2 (ten thousands) reaching this gives the extra life: 50000 (Mesen: score+2 forced to 5 -> lives +1, extraLifeGiven set)
+LIVES_PPU = NAMETABLE0+$F1
+HEALTH_PER_TILE = 8                ; health bar: one tile per 8 points
+HEALTH_BAR_TILES = HEALTH_FULL / HEALTH_PER_TILE
+PLAYER_BAR_PPU = NAMETABLE0+$A8
+BOSS_BAR_PPU = NAMETABLE0+$E8
+TILE_BAR_FULL = $FD                ; full health tile; also the bar end sprite of the boss bar
+TILE_BAR_END_PLAYER = $FE          ; bar end sprite of the player bar
+BAR_END_X = $38                    ; X of the bar end sprite for an empty bar
+BAR_END_Y = $17                    ; Y of the first bar end sprite (-$10, PutBarEndSprite adds $10 per bar)
+BAR_END_Y_STEP = $10
+BOSS_HEAL_PERIOD = $0D             ; bossHealTimer: bossHealth + 1 every this many slow ticks below HEALTH_FULL
+FLOOR_MARKER_BLINK = 2             ; floorMarkerTimer between blinks
+use C782 C792 FLOOR_TIME_DIGITS
+use C75C FLOOR_TIME_DIGITS-1
+use C776 >FLOOR_TIME_PPU
+use C77C <FLOOR_TIME_PPU
+use CBA5 CBC7 CC1D CC1F SCORE_DIGITS-1
+use CC08 CC18 CC3C SCORE_DIGITS
+use CC25 2*SCORE_DIGITS-1
+use CBE2 CBF2 CC32 CC50 SCORE_SHOWN
+use CBB5 DECIMAL_BASE
+use CCF8 EXTRA_LIFE_DIGIT
+use CC6F >LIVES_PPU
+use CC74 <LIVES_PPU
+use CC8C PPUREC_HEAD+1
+use CC92 3*SPRITE_BYTES-1
+use C7D0 HEALTH_BAR_TILES-1
+use C7F3 HEALTH_BAR_TILES
+use C849 PPUREC_HEAD+HEALTH_BAR_TILES
+use C853 2*(PPUREC_HEAD+HEALTH_BAR_TILES)
+use C81C HEALTH_PER_TILE-1
+use C7D2 TILE_BLANK
+use C824 C87B TILE_BAR_FULL
+use C870 TILE_BAR_END_PLAYER
+use C7E1 >PLAYER_BAR_PPU
+use C7E9 <PLAYER_BAR_PPU
+use C7EE <BOSS_BAR_PPU
+use C82A TILE_PX
+use C805 BAR_END_X
+use C7FB BAR_END_Y
+use C861 BAR_END_Y_STEP
+use C7FF SPRITE_BYTES
+use C7C6 BOSS_HEAL_PERIOD
+use CD12 FLOOR_MARKER_BLINK
+use 884A 8856 SCORE_DIGITS
+use 8428 3*SPRITE_BYTES-1
+use 8554 8942 SPRITE_BYTES-1
+use 8C03 8C0F SCORE_DIGITS
+NT_ROW_TILES = 32                  ; tiles per nametable row
+NT_SIZE = $400                     ; one nametable with its attributes
+use 8D87 NT_ROW_TILES
+use 8F53 >NT_SIZE
+
+; objMode values (DrawObjectState)
+OBJMODE_POT_BROKEN = 1 @objMode    ; a pot that hit the floor
+OBJMODE_SMOKE = 2 @objMode         ; ObjAppear / ObjVanish smoke (floor 4 boss)
+OBJMODE_BREATH = 3 @objMode        ; the dragon breathes fire
+OBJMODE_RISE = 5 @objMode          ; the dragon rises from its ball
+OBJMODE_VANISH = 6 @objMode        ; the dragon vanishes
+use B4C3 OBJMODE_BREATH
+use B55C OBJMODE_RISE
+use B560 OBJMODE_VANISH
+
+; screen zones (spawns, enemies)
+ONSCREEN_X_MIN = $28               ; an object counts as well on screen between these objX
+ONSCREEN_X_MAX = $D8
+SCREEN_EDGE = 8                    ; a floor 4 flyer point within 8 pixels of the screen edge is skipped
+FLOOR2_EVENTS_PAGE = 3             ; Floor2Events until scrollPage reaches this
+FLOOR4_EVENTS_PAGE = 4             ; Floor4Events until the player (objWorldXHi+6) reaches this page
+use ACC0 AD50 ONSCREEN_X_MIN
+use ACC4 AD54 ONSCREEN_X_MAX
+use AC54 SCREEN_EDGE
+use AC58 <-SCREEN_EDGE
+use AB3C FLOOR2_EVENTS_PAGE
+use AC27 FLOOR4_EVENTS_PAGE
+DROP_LAND_Y = $AA                  ; a dropped dragon ball or pot lands at this objY
+BURST_Y = $78                      ; a floor 2 burst ball bursts at this objY
+use B174 B1AB DROP_LAND_Y
+use B059 BURST_Y
+use BFD4 <-SCREEN_EDGE
+
+; ---- hit boxes and sparks (hits.asm)
+POINT_BOX_X = 3                    ; PointHitBox: box of a shot around (ram_000A, ram_000B): left = x + this
+POINT_BOX_W = 2                    ; ... its width
+POINT_BOX_Y = 4                    ; ... ptr_03 = y + this
+POINT_BOX_H = 3                    ; ... ptr_01 = ptr_03 + this
+HOP_BOX_TOP = $20                  ; SmallEnemyContact: box top below objY of the hopping enemy (its feet)
+HOP_BOX_H = 8
+HOP_BOX_HALF = 4                   ; box = objX +- this
+SPARK_X_BACK = 4                   ; a hit on the player: spark X = objX+6 - this
+SPARK_Y_DROP = 4                   ; a hit by a falling object: spark Y = objY + this
+HOP_SPARK_Y = $98                  ; spark Y of a hop hitting the crouching player
+FRAGMENT_DAMAGE_B = $19            ; hitDamage of a fragment (game B)
+FRAGMENT_DAMAGE_A = $13            ; ... game A
+HOP_RISE_BASE = $1E                ; HopYRise / HopYLand: objY = hopStartY - this
+HOP_FALL_BASE = $28                ; HopYFall
+; bossStep counts down; the hit box of an attack is checked at BOSS_STEP_STRIKE
+BOSS_STEP_STRIKE = 2
+BOSS_STEP_WINDUP = 3               ; start of a counter-attack, floor 4 cast, floor 5 attack or jump
+use C094 POINT_BOX_W
+use C08F POINT_BOX_X
+use C09B POINT_BOX_Y
+use C0A0 POINT_BOX_H
+use CA84 HOP_BOX_TOP
+use CA89 HOP_BOX_H
+use CA90 HOP_BOX_HALF
+use CA95 2*HOP_BOX_HALF
+use C8F8 CAF7 CDBC SPARK_X_BACK
+use C3CA CB87 SPARK_Y_DROP
+use CAF0 HOP_SPARK_Y
+use CB71 FRAGMENT_DAMAGE_B
+use CB75 FRAGMENT_DAMAGE_A
+use CB1A CB49 HOP_RISE_BASE
+use CB27 HOP_FALL_BASE
+use CD6E CFE7 D45E DA57 BOSS_STEP_STRIKE
+use CF9F D103 D197 D3D5 D40C BOSS_STEP_WINDUP
+use C5FE SLOT_BOSS
+TIME_BONUS_REPEAT = 7              ; TimeBonus: floorTime steps per call (loop counts down to -1)
+use CCCC TIME_BONUS_REPEAT
+
+; ---- loop bounds (index = count - 1)
+RNG_BYTES = 8                      ; rngState
+FLYER_POINTS = 4                   ; floor 4 flyer start points (slots 7-10)
+GAME_OVER_TEXT_LEN = $21           ; PPU record copied to ppuBufLen (GameOverText)
+PALETTE_TEMPLATE_LEN = $25
+use 8649 865B 8472 SCORE_DIGITS-1
+use ACDA SLOT_PLAYER
+use ACE3 SLOT_BOSS
+use B884 B9D3 SLOT_BOSS
+use 84BB RNG_BYTES-1
+use 85D2 B99F BA41 FLYER_POINTS-1
+use 8B62 SLOT_PLAYER
+use 8860 GAME_OVER_TEXT_LEN-1
+use 850E PALETTE_TEMPLATE_LEN-1
+use 8528 FLYER_POINTS
+EFFECT_SLOTS = 3                   ; effectTile / effectTimer / fragments: 3 slots each
+use B8F8 B971 B784 B894 B8C8 EFFECT_SLOTS-1
+
+; ---- timer durations (frames for timersFast, slow ticks of 11 frames for timersSlow); all loads seen in Mesen
+ACTION_LOCK_TIME = $0A ; use A85F ACTION_LOCK_TIME ; actionLockTimer: attack pose time
+FLOOR_START_TIME = 8 ; use 8745 FLOOR_START_TIME
+TITLE_IDLE_TIME = $38 ; use 843B TITLE_IDLE_TIME ; modeWaitTimer: title idle before the demo
+DEATH_WAIT_TIME = $10 ; use B25B DEATH_WAIT_TIME ; modeWaitTimer after the player died
+SCENE_STEP_TIME = 5 ; use 8970 8BFB A703 SCENE_STEP_TIME ; sceneTimer: short floor-clear / scene steps
+SCENE_PAUSE_TIME = $18 ; use 8BB6 SCENE_PAUSE_TIME ; sceneTimer: long pause
+SYLVIA_WAIT_TIME = $2C ; use 894D SYLVIA_WAIT_TIME ; timersSlow+4 in the Sylvia scene
+ENDING_GAP_TIME = $10 ; use 8CEF ENDING_GAP_TIME ; spawnGapTimer reused by the ending
+use B23E SLOT_BOSS
+use B259 SLOT_PLAYER
+use B27A OBJ_KNIFE_THROWER
